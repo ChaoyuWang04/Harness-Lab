@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import base64
 import json
+import platform
 import subprocess
 import time
 import urllib.parse
@@ -20,7 +21,9 @@ LAB_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT = LAB_ROOT / "artifacts" / "m2" / "gate_m2.json"
 DEFAULT_ENV = LAB_ROOT / "secrets" / ".env"
 TERMINAL = {"completed", "failed", "cancelled"}
-M0_DOCKER_BYTES = 8318976000
+REQUIRED_SERVICES = frozenset(
+    {"api", "dispatcher", "lgtm", "ollama", "postgres", "redis", "sweeper", "worker"}
+)
 
 
 def parse_dotenv(path: Path) -> dict[str, str]:
@@ -57,8 +60,12 @@ def validate_panel_results(values: dict[str, Any]) -> dict[str, Any]:
 
 
 def validate_resources(values: dict[str, Any]) -> dict[str, Any]:
-    if values.get("docker_mem_total_bytes") != M0_DOCKER_BYTES:
-        raise AssertionError("Docker allocation changed from M0")
+    if int(values.get("docker_mem_total_bytes", 0)) <= 0:
+        raise AssertionError("Docker memory must be measured on the runtime host")
+    running_services = set(values.get("running_services", []))
+    missing_services = sorted(REQUIRED_SERVICES - running_services)
+    if missing_services:
+        raise AssertionError(f"missing required running services: {', '.join(missing_services)}")
     if float(values.get("aggregate_rss_mib", 4096)) >= 4096:
         raise AssertionError("aggregate RSS must remain below 4 GiB")
     if int(values.get("oom_count", 1)) != 0:
@@ -353,14 +360,18 @@ def _memory_to_mib(value: str) -> float:
     return float(number) * factors[unit]
 
 
-def docker_resources() -> dict[str, Any]:
+def docker_resources(env_file: Path = DEFAULT_ENV) -> dict[str, Any]:
     mem_total = int(subprocess.check_output(["docker", "info", "--format", "{{.MemTotal}}"], text=True).strip())
     stats_text = subprocess.check_output(
         ["docker", "stats", "--no-stream", "--format", "{{json .}}"], text=True
     )
     lab_stats = [json.loads(line) for line in stats_text.splitlines() if "harness-lab-" in line]
     rss = sum(_memory_to_mib(item["MemUsage"].split("/")[0].strip()) for item in lab_stats)
-    ids = subprocess.check_output(["docker", "compose", "ps", "-q"], cwd=LAB_ROOT, text=True).split()
+    compose = ["docker", "compose", "--env-file", str(env_file)]
+    running_services = subprocess.check_output(
+        [*compose, "ps", "--services", "--status", "running"], cwd=LAB_ROOT, text=True
+    ).split()
+    ids = subprocess.check_output([*compose, "ps", "-q"], cwd=LAB_ROOT, text=True).split()
     oom = 0
     restarts = 0
     for container_id in ids:
@@ -378,7 +389,9 @@ def docker_resources() -> dict[str, Any]:
         restarts += restart_count
     return validate_resources(
         {
+            "runtime_host": platform.node(),
             "docker_mem_total_bytes": mem_total,
+            "running_services": sorted(running_services),
             "aggregate_rss_mib": round(rss, 3),
             "oom_count": oom,
             "unexpected_restart_count": restarts,
@@ -404,7 +417,7 @@ def main() -> int:
     )
     tempo = query_tempo(args.grafana_base, runs[0]["run_id"])
     langfuse = query_langfuse(values, runs[0]["run_id"])
-    resources = docker_resources()
+    resources = docker_resources(args.env_file)
 
     sentry_path = LAB_ROOT / "artifacts" / "m2" / "sentry_issue_verified.json"
     alert_path = LAB_ROOT / "artifacts" / "m2" / "alert_verified.json"

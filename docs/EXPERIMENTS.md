@@ -86,7 +86,7 @@
 - 范围：修正最终答案的中文渲染；加入 LGTM、OpenTelemetry、Langfuse、Sentry、`/metrics/debug`、四块 Harness SLO 面板和两条告警；不改变 M1 状态机、幂等、lease 或工具事务语义
 - 预测：API→dispatcher→RQ workhorse→model/tool 共用一个 W3C trace，run_id 作为跨系统关联字段；30 个 run 后四块面板均有数据；Langfuse 每轮都有 prompt/completion/token；Sentry issue 页面中的指定 event_id 含同一 run_id；停掉 worker 后由 PostgreSQL 持续采样的 oldest-queued-age 告警进入 Firing
 - 告警判据：负对照为 worker 正常且无积压 2 分钟保持 Normal；正对照为停掉全部 worker 后 `max(agent_oldest_queued_age_seconds) > 10` 持续 2 分钟进入 Firing，随后立即恢复 worker
-- 资源停止线：Docker Desktop allocation 必须保持 M0 的 8,318,976,000 bytes；LGTM hard limit=`2g`；就绪后和 30-run 后 Lab 合计 RSS 均须 <4 GiB，且 OOM=0、非预期 restart=0；任一越线立即停止负载并调优，不以增配到 10GB 绕过
+- 资源停止线：运行面迁移后在实际 Compose 主机 `home-5090` 测量，记录 hostname、Docker memory 和八项必需服务；LGTM hard limit=`2g`；就绪后和 30-run 后 Lab 合计 RSS 均须 <4 GiB，且 OOM=0、非预期 restart=0。旧 Mac Docker allocation `8,318,976,000` bytes 只保留为 M0 历史证据，不再与 5090 主机做错误的等值比较
 - 证据：只接受本轮 `artifacts/m2/` 机器证据；运行结果与主观感受在执行后填写，不预写通过
 
 ### [M2-INT] 施工中读数（不代表 Gate 通过）
@@ -100,7 +100,7 @@
 - 面板尺子正对照：3 个非正式诊断 run 全部 completed，新增 workhorse metric instance 恰好 3 个；快照聚合得到 run P95 4.75 秒、failed rate 0、queue lag P95 23.875 秒、model/tool 非空系列 3。该批次只验证查询算法，不代替最终 30-run Gate
 - 回归：重建后 `scripts/verify_m1.py` 六项全部 PASS；最新完整集成回归为 93 passed / 1 skipped（隔离 `harness_test` 数据库）
 - 云端连接：Langfuse SDK `auth_check=True`；Sentry 受控 probe 已获得 event_id `53781a9083f04fc3ae5f9d9e681c4ea8`，关联 `run_id=run_sentry_m2_90524`，脱敏证据见 `artifacts/m2/sentry_probe.json`。这只证明 SDK 写入/认证，不替代 G3/G4 的页面和字段验收
-- 资源：Docker allocation 仍为 8,318,976,000 bytes；启动 LGTM 前约 359.65 MiB，当前全栈约 1,552.54 MiB，均低于 4 GiB 停止线；OOM=0、意外 restart=0；Lab 总磁盘约 1.2 GiB，其中模型 498 MiB、持久数据 335 MiB、缓存 167 MiB、venv 178 MiB
+- 资源：迁移前 Mac 读数为启动 LGTM 前约 359.65 MiB、全栈约 1,552.54 MiB。迁移后 `home-5090` Docker memory 为 33,237,381,120 bytes；修复复验时八项服务齐全，合计约 1,255 MiB，低于 4 GiB 停止线；OOM=0、restart=0。最终值仍由唯一 30-run Gate 重测
 - 当前未验：Sentry issue 页面尚未形成指定 event_id + `run_id` 的用户可见证据；因为这个前置 Gate 尚缺，唯一 30-run cohort 未启动，M2 状态保持 OPEN
 - Dashboard 实测修正：用户从 UI 短时间提交约 10 个请求后，PostgreSQL 显示端到端耗时从 2.316 秒升至 36.732 秒，原始累计 histogram 的 queue-lag P95 为 45.9375 秒、run execution P95 为 4.75 秒，但原面板 `rate(...[$__rate_interval])` 返回 `NaN`。根因是每个 RQ workhorse 只导出一个累计样本便退出，单样本序列无法计算 `rate()`。面板与 failed-rate 告警已改为聚合 Collector 保留的累计值，并明确其“当前 telemetry stack 生命周期”口径；零失败回退为 0%，模型错误计数与工具延迟拆分左右单位轴。重建 LGTM 后以 10 个带 `M2-DASHBOARD-REPAIR` 标记的并发 run 复验：10/10 terminal、run execution P95=4.75 秒、queue-lag P95=45.8333 秒、failed rate=0%、model 200=10，证明真实队列压力可被读取；这批仅是修复诊断，不代替最终 30-run cohort。
 

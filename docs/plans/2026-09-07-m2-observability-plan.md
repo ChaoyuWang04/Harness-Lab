@@ -33,7 +33,7 @@
 - [ ] Run `uv add opentelemetry-sdk opentelemetry-exporter-otlp-proto-grpc opentelemetry-instrumentation-fastapi opentelemetry-instrumentation-sqlalchemy opentelemetry-instrumentation-requests opentelemetry-instrumentation-httpx opentelemetry-instrumentation-redis langfuse 'sentry-sdk[fastapi]<3'`; record resolved versions from `uv.lock` and the Sentry pin reason.
 - [ ] Add settings with telemetry enabled in Compose but safely disabled for isolated unit tests.
 - [ ] Run `uv run pytest tests/test_m2_structure.py tests/test_config.py -q`; require PASS.
-- [ ] Capture pre-LGTM RSS, restart, OOM, and Docker allocation in `artifacts/m2/resource_preflight.json`; assert allocation equals the saved M0 value, aggregate RSS `<4 GiB`, OOM 0, and unexpected restarts 0.
+- [ ] On the actual Compose host, capture hostname, Docker memory, the eight required running services, RSS, restart, and OOM state in `artifacts/m2/resource_preflight.json`; require aggregate RSS `<4 GiB`, OOM 0, and unexpected restarts 0. Do not compare the migrated 5090 host to the historical Mac Docker allocation.
 
 ### Task 3: Shared telemetry and debug counts
 
@@ -109,7 +109,7 @@
 - [ ] Run the disabled-by-default Sentry verifier and save only its event ID/run ID. Open Sentry and save a user-visible issue screenshot proving that exact event ID and `run_id`; an ingestion response alone does not pass G4. Recursively scan artifacts/config for the DSN, authorization/cookie values, and Langfuse keys.
 - [ ] Negative alert control: with workers running and no queued runs, observe `max(agent_oldest_queued_age_seconds) <= 10` and Normal for two minutes. Positive control: stop all workers, create one run, require `max(agent_oldest_queued_age_seconds) > 10` continuously for two minutes and Grafana Firing, then immediately restore the worker and require recovery.
 - [ ] Inspect one real RQ-workhorse Tempo trace and assert trace ID/parent continuity plus API, dispatcher, worker, every model call, and every tool span. Query one Langfuse run and fail if any expected round lacks prompt, completion, or prompt/completion/total token counts.
-- [ ] Run `uv run python scripts/verify_m2.py`; require its sole cohort to contain exactly 30 terminal runs, Tempo/Langfuse queries to filter by those run IDs, Grafana queries to use the recorded exclusive cohort time window, four non-empty panel results, three recorded numeric baselines, all five Gate booleans true, final aggregate RSS `<4 GiB`, unchanged Docker allocation, OOM 0, unexpected restarts 0, and a redacted `artifacts/m2/gate_m2.json`.
+- [ ] Run `uv run python scripts/verify_m2.py` on `home-5090`; require its sole cohort to contain exactly 30 terminal runs, Tempo/Langfuse queries to filter by those run IDs, Grafana queries to use the recorded exclusive cohort time window, four non-empty panel results, three recorded numeric baselines, all five Gate booleans true, all eight required services present, final aggregate RSS `<4 GiB`, OOM 0, unexpected restarts 0, and a redacted `artifacts/m2/gate_m2.json`.
 - [ ] Update `docs/EXPERIMENTS.md` with predictions, actuals, resource readings, three numeric baselines, and at most five lines reserved for the user's later subjective comparison.
 - [ ] Mark M2 passed in `README.md` only if all five gates pass; otherwise record the exact open gate without weakening it.
 

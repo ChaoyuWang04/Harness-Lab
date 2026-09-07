@@ -47,7 +47,7 @@ RQ workhorses are short-lived and export exactly one cumulative metric sample be
 
 ## Resource stop line
 
-Before LGTM, record current container RSS/restarts/OOM and assert Docker daemon allocation has not increased from the saved M0 value `8,318,976,000` bytes. LGTM has a hard Compose limit of `2g`; no extra self-hosted Sentry or Langfuse components are enabled. Require Grafana, Tempo, Prometheus/Mimir, Loki, and the collector to become ready and aggregate Lab RSS to remain below 4 GiB before starting the 30-run load. Recheck after the load. Do not increase Docker Desktop memory. Stop immediately if aggregate Lab RSS reaches 4 GiB, any container is OOM-killed, an unexpected restart occurs, or the host becomes noticeably impaired.
+The runtime now lives on `home-5090`, so the old Mac Docker allocation `8,318,976,000` bytes is historical M0 evidence rather than a valid equality check. Run the verifier on the actual Compose host, record its hostname and Docker memory, and require all eight M2 services (`api`, `dispatcher`, `lgtm`, `ollama`, `postgres`, `redis`, `sweeper`, `worker`) to be running there. LGTM keeps its hard Compose limit of `2g`; no extra self-hosted Sentry or Langfuse components are enabled. Require Grafana, Tempo, Prometheus, Loki, and the collector to become ready and aggregate Lab RSS to remain below 4 GiB before starting the 30-run load. Recheck after the load. Stop immediately if aggregate Lab RSS reaches 4 GiB, any container is OOM-killed, an unexpected restart occurs, or the host becomes noticeably impaired. Mac Docker allocation is no longer part of this Gate because no Lab container runs on the Mac.
 
 ## Acceptance
 

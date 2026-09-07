@@ -42,7 +42,18 @@ def test_gate_requires_four_panels_three_numbers_and_resources() -> None:
         "run_samples": 30,
     }
     resources = {
-        "docker_mem_total_bytes": 8318976000,
+        "runtime_host": "samwang-X870I-AORUS-PRO-ICE",
+        "docker_mem_total_bytes": 33237381120,
+        "running_services": [
+            "api",
+            "dispatcher",
+            "lgtm",
+            "ollama",
+            "postgres",
+            "redis",
+            "sweeper",
+            "worker",
+        ],
         "aggregate_rss_mib": 1024,
         "oom_count": 0,
         "unexpected_restart_count": 0,
@@ -56,6 +67,10 @@ def test_gate_requires_four_panels_three_numbers_and_resources() -> None:
         verifier.validate_panel_results({**panels, "run_p95_seconds": float("nan")})
     with pytest.raises(AssertionError, match="RSS"):
         verifier.validate_resources({**resources, "aggregate_rss_mib": 4096})
+    with pytest.raises(AssertionError, match="running services"):
+        verifier.validate_resources({**resources, "running_services": ["api"]})
+    with pytest.raises(AssertionError, match="Docker memory"):
+        verifier.validate_resources({**resources, "docker_mem_total_bytes": 0})
 
 
 def test_written_gate_evidence_is_recursively_secret_free(tmp_path: Path) -> None:
