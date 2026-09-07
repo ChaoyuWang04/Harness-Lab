@@ -400,7 +400,7 @@ compose 增加 chaos-proxy 服务；`.env` 里 `LLM_BASE_URL` 改指 `http://cha
 
 **EXP-2 · dispatcher 在"投递后、标记前"死亡（防护：at-least-once + 任务层幂等）**
 - 注入：在 dispatcher 代码 publish 与 UPDATE 之间加一个 `CHAOS_DISPATCHER_CRASH=1` 时 `os._exit(1)` 的开关；触发一次后重启 dispatcher。
-- 通过标准：outbox 该行仍 pending → 被重投；RQ 因 job_id=run_id 去重或 worker claim 拒绝，**run 只执行一份**（run_events 无重复 started 序列）。
+- 通过标准：outbox 该行仍 pending → 被重投；同一 Outbox delivery 由当前 `{run_id}_outbox_{outbox_id}` job ID 去重，run 级所有权由 PostgreSQL lease/fencing 拒绝重复 claim，**run 只执行一份**（run_events 无重复 started 序列）。
 
 **EXP-3 · Redis 全宕 60s（防护：Outbox 缓冲）**
 - 注入：持续以 1 run/s 创建（脚本），期间 `docker stop redis` 60 秒后恢复。

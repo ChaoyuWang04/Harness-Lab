@@ -119,6 +119,16 @@
 
 - 用户在前端连续提交约 10 条请求时，肉眼看到返回明显变慢，却发现原 P95 面板没有变化；这直接暴露了监控虽已接线、查询口径却不正确。修正后同类压力和正式 30-run cohort 都能显示真实 queue lag，面板现在能区分“模型执行慢”和“排队慢”，比只看日志/数据库更快定位瓶颈。
 
+## M3 · 故障注入与压测
+
+### [M3-PRE] 预注册与运行边界
+
+- 时间：2026-09-07 CST；用户已明确批准执行完整 M3，并要求 Gate 完成后再设计前端一键故障演示
+- 范围：严格执行 EXP-1 worker 猝死、EXP-2 dispatcher 双写窗口崩溃、EXP-3 Redis 宕机 60 秒、EXP-4 429/timeout provider 退化、EXP-5 500×50 单/四 worker 压测、EXP-6 20 客户端各五次 SSE 重连；阈值不在执行后调整
+- 隔离：破坏性实验只写独立 `harness_m3` 数据库与 Redis DB 1；正常 `harness` 数据库不清理、不写 M3 run。失败保留证据，不自动重跑冒充首次结果
+- 注入口：Chaos Proxy 使用固定 seed 的确定性计数序列；dispatcher 使用落盘 one-shot marker；worker/Redis 只按 Compose 解析出的精确容器身份操作。每个实验后局部恢复，整个 Gate 结束或异常时由 wrapper trap 恢复普通单 worker、直接 Ollama、正常数据库
+- 判据与实现计划：`docs/plans/2026-09-07-m3-chaos-design.md`、`docs/plans/2026-09-07-m3-chaos-plan.md`。实际结果只从 `artifacts/m3/` 回填
+
 ## 运行面迁移 · 独立 Git + home-5090
 
 ### [MIG-G1] Git 边界
