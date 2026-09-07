@@ -153,6 +153,13 @@
 - 根因：M3 wrapper 只构建了 `api` 和 `chaos-proxy` 镜像。Compose 为 `dispatcher`、`worker`、`sweeper`、`migrate` 使用各自镜像名，因此 dispatcher 仍是 M2 旧镜像，新 crash hook 没有进入真实被测进程
 - 修复：wrapper 改为构建全部 Python 服务镜像，并在创建数据库/run 前从 `harness-lab-dispatcher` 镜像导入 `crash_after_publish_once` 作为接线正对照。Gate 2 数据和 `artifacts/m3/gate2/` 保留；新的全量 Gate 必须继续使用新 namespace
 
+### [M3-GATE-3-PRE] 全 Python 镜像接线后的独立复验
+
+- 时间：2026-09-08 CST；沿用用户“按推荐方案完整完成 M3”的授权
+- 隔离：新 PostgreSQL 数据库 `harness_m3_gate3`、Redis DB 3 和 `artifacts/m3/gate3/`；Gate 1/2 均不删除、不覆盖
+- 新正对照：wrapper 在任何 run 前构建 api/dispatcher/worker/sweeper/migrate/chaos-proxy 全部镜像，并要求 dispatcher 镜像能导入一次性 crash hook；随后仍须通过 3/3 精确工具参数探针
+- 判据与停止线：与 `[M3-PRE]` 完全一致。任一项失败即保留 Gate 3 并停止，不把前两次通过的局部结果拼接成总体通过
+
 ## 运行面迁移 · 独立 Git + home-5090
 
 ### [MIG-G1] Git 边界
