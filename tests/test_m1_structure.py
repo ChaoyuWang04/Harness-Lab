@@ -76,8 +76,6 @@ class M1StructureTests(unittest.TestCase):
             api_block.group(1),
         )
         self.assertIn("mem_limit: 768m", api_block.group(1))
-        self.assertIn('DATABASE_POOL_SIZE: "10"', api_block.group(1))
-        self.assertIn('DATABASE_POOL_WARM_CONNECTIONS: "10"', api_block.group(1))
 
     def test_dockerfile_uses_lab_project(self) -> None:
         dockerfile = (LAB_ROOT / "Dockerfile").read_text(encoding="utf-8")

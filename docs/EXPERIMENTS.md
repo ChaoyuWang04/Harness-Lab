@@ -278,6 +278,14 @@
 - 判据：500/500 进入终态、0 failed、POST P95 `<150 ms`、Lab 实际 RSS `<4 GiB`；脚本无论成功失败都恢复普通单执行-worker运行面
 - 停止条件：若定向实压仍失败，不继续堆 worker、连接数或放宽门槛，转入 API/数据库写路径的架构审查；只有通过才注册新的完整 M3 Gate
 
+### [M3-POOLWARM-DIAG] 连接池预热未解决真实执行臂尾延迟
+
+- 时间：2026-09-08 CST；按预注册配置完成独立四-worker 定向实压
+- 实际：500/500 completed、0 failed，POST P95=155.448 ms、queue-lag P95=377.417 s、run P95=0.525 s、throughput=75.600 run/min；POST P95 仍未满足严格 `<150 ms`，FAIL
+- 资源与恢复：失败后 trap 已恢复普通单执行-worker运行面；恢复后八项常驻服务全部 running，已有 healthcheck 的 Ollama、PostgreSQL、Redis、LGTM 均 healthy；Lab RSS 约 2.56 GiB，低于 4 GiB 停止线
+- 结论：预建连接不是根因，不注册完整新 Gate，也不继续增加进程、连接数或放宽阈值。该运行的脱敏证据保存在 `artifacts/m3/diagnostics/load_four_poolwarm.json`
+- 回退：连接池预热代码与 Compose 配置不进入普通运行面。下一候选是把新 run 的写路径从三次 flush 加首事件的两次读取，收敛成仍保持 run/event/outbox 原子性的单次 flush；实施前单独评审与预注册
+
 ## 运行面迁移 · 独立 Git + home-5090
 
 ### [MIG-G1] Git 边界

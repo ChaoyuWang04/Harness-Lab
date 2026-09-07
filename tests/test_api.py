@@ -4,7 +4,6 @@ import os
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, delete, func, select
@@ -15,34 +14,7 @@ LAB_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(LAB_ROOT))
 
 from app.api.main import create_app  # noqa: E402
-from app.db import SessionLocal, warm_engine_pool  # noqa: E402
 from app.models import AgentRun, IdempotencyKey, OutboxJob, RunEvent  # noqa: E402
-
-
-def test_warm_engine_pool_holds_target_connections_before_releasing() -> None:
-    state = {"active": 0, "peak": 0, "closed": 0}
-
-    class FakeConnection:
-        def close(self) -> None:
-            state["active"] -= 1
-            state["closed"] += 1
-
-    class FakeEngine:
-        def connect(self) -> FakeConnection:
-            state["active"] += 1
-            state["peak"] = max(state["peak"], state["active"])
-            return FakeConnection()
-
-    assert warm_engine_pool(FakeEngine(), 10) == 10
-    assert state == {"active": 0, "peak": 10, "closed": 10}
-
-
-def test_api_lifespan_prewarms_the_bound_pool() -> None:
-    with patch("app.api.main.warm_engine_pool") as warm:
-        with TestClient(create_app(pool_warm_connections=3)) as client:
-            assert client.get("/health").status_code == 200
-
-    warm.assert_called_once_with(SessionLocal.kw["bind"], 3)
 
 
 @unittest.skipUnless(os.getenv("TEST_DATABASE_URL"), "requires Compose PostgreSQL")
