@@ -1017,15 +1017,20 @@ class M3Verifier:
             prompt="[M3-API-CAPACITY] 只回复 OK，不调用工具",
             prefix=f"m3-api-capacity-{time.time_ns()}",
         )
-        result = validate_api_capacity(
-            {
-                "created": len(run_ids),
-                "concurrency": EXPERIMENT_SIZES["load_concurrency"],
-                "post_p95_ms": round(_percentile(post_ms, 0.95), 3),
-                "creation_wall_seconds": round(time.monotonic() - started, 3),
-                "run_ids_sha256": self._run_id_digest(run_ids),
-            }
-        )
+        raw_result = {
+            "created": len(run_ids),
+            "concurrency": EXPERIMENT_SIZES["load_concurrency"],
+            "post_p95_ms": round(_percentile(post_ms, 0.95), 3),
+            "creation_wall_seconds": round(time.monotonic() - started, 3),
+            "run_ids_sha256": self._run_id_digest(run_ids),
+        }
+        try:
+            result = validate_api_capacity(raw_result)
+        except AssertionError:
+            write_redacted_evidence(
+                self.output, {"ok": False, **raw_result}, self.secret_values
+            )
+            raise
         write_redacted_evidence(self.output, result, self.secret_values)
         return result
 

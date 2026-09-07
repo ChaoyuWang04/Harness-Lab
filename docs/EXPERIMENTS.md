@@ -228,6 +228,12 @@
 - 根因证据：两个 500-run 创建批次的数据库创建时间跨度分别为 2.503 秒和 3.073 秒；当前单 Uvicorn API 进程约 160～200 req/s，50 并发在入口形成数百毫秒排队。失败不是模型执行或 worker 扩容无效
 - 处理：API 状态只在 PostgreSQL，入口可安全多进程化；将同一 API 容器改为四个 Uvicorn worker。先用专用空数据库跑固定 500×50 API-only 诊断并检查 150 ms 与 4 GiB 停止线；诊断未通过则不启动新的全量 Gate
 
+### [M3-API4-DIAG-1] 四 API 进程的首次隔离诊断
+
+- 时间：2026-09-08 CST；专用数据库 `harness_m3_api4_probe`，500×50 创建完成后不由 dispatcher 消费，普通 API 由 trap 恢复
+- 结果：诊断按 150 ms 门槛返回 FAIL，因此没有启动 Gate 8；但失败路径先抛断言、后写证据，精确 P95 未落盘，只保留数据库和 `artifacts/m3/diagnostics/failure.json`
+- 处理：不猜测数值、不复用数据库。先修正诊断器，使 PASS/FAIL 都先落 `created`、concurrency、POST P95、创建 wall time 和 run-ID digest，再用 `harness_m3_api4_probe2` 独立复测
+
 ## 运行面迁移 · 独立 Git + home-5090
 
 ### [MIG-G1] Git 边界

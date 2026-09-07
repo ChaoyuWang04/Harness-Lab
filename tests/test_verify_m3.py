@@ -183,6 +183,23 @@ def test_api_capacity_probe_keeps_500_by_50_and_150ms_gate() -> None:
         )
 
 
+def test_failed_api_capacity_probe_still_writes_numeric_evidence(tmp_path: Path) -> None:
+    verifier = load_verifier()
+    probe = object.__new__(verifier.M3Verifier)
+    probe.output = tmp_path / "api_capacity.json"
+    probe.secret_values = []
+    probe.create_batch = lambda **_kwargs: ([f"run-{index}" for index in range(500)], [200.0] * 500)
+    probe._run_id_digest = lambda _run_ids: "digest"
+
+    with pytest.raises(AssertionError, match="150"):
+        verifier.M3Verifier.api_capacity_probe(probe)
+
+    evidence = json.loads(probe.output.read_text(encoding="utf-8"))
+    assert evidence["ok"] is False
+    assert evidence["created"] == 500
+    assert evidence["post_p95_ms"] == 200.0
+
+
 def test_provider_gate_requires_alert_in_at_least_one_degraded_arm() -> None:
     verifier = load_verifier()
     rate_limited = {
