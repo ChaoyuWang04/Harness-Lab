@@ -132,6 +132,42 @@ class OutboxTests(unittest.TestCase):
         self.assertEqual([run for _, run in queue.deliveries], [run_id, run_id])
         self.assertEqual(len({delivery for delivery, _ in queue.deliveries}), 2)
 
+    def test_post_publish_crash_rolls_back_outbox_and_retry_deduplicates_delivery(self) -> None:
+        with self.sessions.begin() as session:
+            run_id = create_run(session, {"prompt": "dispatcher crash"}).id
+        queue = RecordingQueue()
+
+        with self.assertRaisesRegex(RuntimeError, "crash after publish"):
+            dispatch_batch(
+                self.sessions,
+                queue,
+                post_publish_hook=lambda _run_id, _outbox_id: (_ for _ in ()).throw(
+                    RuntimeError("crash after publish")
+                ),
+            )
+
+        with self.sessions() as session:
+            job = session.scalar(select(OutboxJob).where(OutboxJob.payload["run_id"].astext == run_id))
+            self.assertEqual(job.status, "pending")
+            self.assertEqual(
+                session.scalar(
+                    select(func.count()).select_from(RunEvent).where(RunEvent.type == "run.enqueued")
+                ),
+                0,
+            )
+
+        self.assertEqual(dispatch_batch(self.sessions, queue), 1)
+        self.assertEqual(len(queue.deliveries), 1)
+        with self.sessions() as session:
+            job = session.scalar(select(OutboxJob).where(OutboxJob.payload["run_id"].astext == run_id))
+            self.assertEqual(job.status, "dispatched")
+            self.assertEqual(
+                session.scalar(
+                    select(func.count()).select_from(RunEvent).where(RunEvent.type == "run.enqueued")
+                ),
+                1,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

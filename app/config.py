@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     chaos_5xx_rate: float = Field(default=0, ge=0, le=1)
     chaos_latency_ms: int = Field(default=0, ge=0, le=60000)
     chaos_timeout_seconds: float = Field(default=31, gt=0, le=180)
+    chaos_dispatcher_crash_after_publish: bool = False
+    chaos_dispatcher_marker: Path = Path("/var/lib/harness-chaos/dispatcher-after-publish.once")
 
 
 settings = Settings()

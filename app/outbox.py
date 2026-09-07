@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from collections.abc import Callable
 from typing import Protocol
 
 from rq.exceptions import DuplicateJobError
@@ -30,6 +31,7 @@ def dispatch_batch(
     *,
     limit: int = 100,
     now: datetime | None = None,
+    post_publish_hook: Callable[[str, int], object] | None = None,
 ) -> int:
     checked_at = now or datetime.now(timezone.utc)
     dispatched = 0
@@ -70,6 +72,8 @@ def dispatch_batch(
                 job.last_error = type(exc).__name__
                 continue
 
+            if post_publish_hook is not None:
+                post_publish_hook(run_id, job.id)
             job.status = "dispatched"
             job.last_error = None
             append_event(session, run_id, "run.enqueued", {"outbox_job_id": job.id})

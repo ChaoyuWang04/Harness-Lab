@@ -131,8 +131,12 @@ services:
       DATABASE_URL: ${HARNESS_COMPOSE_DATABASE_URL:-postgresql+psycopg://postgres:harness@postgres:5432/harness}
       REDIS_URL: ${HARNESS_COMPOSE_REDIS_URL:-redis://redis:6379/0}
       LLM_BASE_URL: ${HARNESS_COMPOSE_LLM_BASE_URL:-http://ollama:11434/v1}
+      CHAOS_DISPATCHER_CRASH_AFTER_PUBLISH: ${CHAOS_DISPATCHER_CRASH_AFTER_PUBLISH:-false}
+      CHAOS_DISPATCHER_MARKER: /var/lib/harness-chaos/dispatcher-after-publish.once
       HARNESS_OBSERVABILITY_ENABLED: "true"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
+    volumes:
+      - ./data/chaos:/var/lib/harness-chaos
     mem_limit: 256m
     restart: unless-stopped
     depends_on:
