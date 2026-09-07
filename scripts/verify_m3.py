@@ -253,8 +253,9 @@ class M3Verifier:
     ) -> None:
         if not database_url.rsplit("/", 1)[-1].startswith("harness_m3"):
             raise AssertionError("M3 verifier refuses a non-harness_m3 database")
-        if not redis_url.endswith("/1"):
-            raise AssertionError("M3 verifier requires isolated Redis DB 1")
+        redis_path = urllib.parse.urlparse(redis_url).path.strip("/")
+        if not redis_path.isdigit() or int(redis_path) <= 0:
+            raise AssertionError("M3 verifier requires an isolated non-zero Redis DB")
         self.api_base = api_base.rstrip("/")
         self.grafana_base = grafana_base.rstrip("/")
         self.proxy_base = proxy_base.rstrip("/")

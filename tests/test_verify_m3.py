@@ -61,6 +61,25 @@ def test_tool_contract_preflight_requires_three_exact_calls() -> None:
         )
 
 
+def test_gate2_accepts_redis_db2_but_rejects_normal_db0(tmp_path: Path) -> None:
+    verifier = load_verifier()
+    kwargs = {
+        "api_base": "http://api:8000",
+        "grafana_base": "http://lgtm:3000",
+        "proxy_base": "http://chaos-proxy:9000",
+        "database_url": "postgresql+psycopg://postgres:harness@postgres/harness_m3_gate2",
+        "normal_database_url": "postgresql+psycopg://postgres:harness@postgres/harness",
+        "env_file": tmp_path / ".env",
+        "output": tmp_path / "gate_m3.json",
+        "secret_values": [],
+    }
+
+    gate2 = verifier.M3Verifier(redis_url="redis://redis:6379/2", **kwargs)
+    gate2.close()
+    with pytest.raises(AssertionError, match="non-zero"):
+        verifier.M3Verifier(redis_url="redis://redis:6379/0", **kwargs)
+
+
 def test_summarize_run_timings_uses_event_timestamps() -> None:
     verifier = load_verifier()
     origin = datetime(2026, 9, 7, tzinfo=timezone.utc)
