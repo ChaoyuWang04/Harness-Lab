@@ -262,6 +262,22 @@
 - 新接线：API 容器固定四个 Uvicorn worker、768 MiB limit；批量压测每 executor thread 复用 HTTP session。仅 EXP-5 的 500×50 两臂省略 Idempotency-Key，与原 `hey` 命令一致
 - 判据：EXP-5 仍要求两个臂 POST P95 各 <150 ms、四 worker queue-lag P95 至少下降 50%；其他 EXP-1～4/6、全局重复审计、比较表、资源 <4 GiB 与失败即停规则全部不变
 
+### [M3-GATE-8] 四执行 worker 下入口尾延迟仍超标并停止
+
+- 时间：2026-09-08 CST；使用预注册的 `harness_m3_gate8`、Redis DB 8 和 `artifacts/m3/gate8/`
+- EXP-1～4：全部通过；故障注入、恢复、告警与审计路径均按原判据工作
+- EXP-5：两个臂均 500/500 completed、0 failed。一 worker 的 POST P95=95.837 ms、queue-lag P95=1448.901 s、throughput=19.697 run/min；四 worker 的 POST P95=175.577 ms、queue-lag P95=377.994 s、throughput=75.838 run/min
+- 结论：四 worker 将 queue-lag P95 降低约 73.9%、吞吐提高约 3.85 倍，但四-worker 臂 POST P95 未满足严格 `<150 ms`，所以 Gate 8 为 FAIL，按失败即停规则没有运行 EXP-6。API-only 诊断不能替代真实执行臂
+- 分析：创建时间窗分别只有 0.603/0.721 秒，说明问题集中在四个执行 worker 同时回写数据库时的 API 尾延迟。PostgreSQL `max_connections=100`，普通运行面约 8 个连接；下一步只调整 API 自己的连接池，不改变验收阈值
+
+### [M3-POOLWARM-DIAG-PRE] 四执行 worker + API 连接池预热定向实压
+
+- 时间：2026-09-08 CST；独立数据库 `harness_m3_poolwarm_probe`、Redis DB 9、证据 `artifacts/m3/diagnostics/load_four_poolwarm.json`，不覆盖任何 Gate
+- 单变量：四个 API 进程各配置 pool size=10、max overflow=10，并在进程 lifespan 启动时真实建立并归还 10 个连接；保留 `pool_pre_ping`、同步 durable commit、四执行 worker 和 300 ms provider latency
+- 固定负载：只跑 EXP-5 的四-worker 臂，500 runs、concurrency=50、连接复用、无 Idempotency-Key，与原 `hey` 请求语义一致
+- 判据：500/500 进入终态、0 failed、POST P95 `<150 ms`、Lab 实际 RSS `<4 GiB`；脚本无论成功失败都恢复普通单执行-worker运行面
+- 停止条件：若定向实压仍失败，不继续堆 worker、连接数或放宽门槛，转入 API/数据库写路径的架构审查；只有通过才注册新的完整 M3 Gate
+
 ## 运行面迁移 · 独立 Git + home-5090
 
 ### [MIG-G1] Git 边界

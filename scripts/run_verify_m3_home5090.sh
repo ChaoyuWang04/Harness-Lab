@@ -5,6 +5,7 @@ lab_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${lab_root}"
 
 gate_id="${1:-gate1}"
+verifier_mode_args=()
 case "${gate_id}" in
   gate1)
     m3_database_name="harness_m3"
@@ -53,6 +54,13 @@ case "${gate_id}" in
     m3_test_database_name="harness_m3_gate8_test"
     m3_redis_url="redis://redis:6379/8"
     m3_output="${lab_root}/artifacts/m3/gate8/gate_m3.json"
+    ;;
+  poolwarm_probe)
+    m3_database_name="harness_m3_poolwarm_probe"
+    m3_test_database_name="harness_m3_poolwarm_probe_test"
+    m3_redis_url="redis://redis:6379/9"
+    m3_output="${lab_root}/artifacts/m3/diagnostics/load_four_poolwarm.json"
+    verifier_mode_args=(--load-four-only)
     ;;
   *)
     echo "Unsupported M3 gate id: ${gate_id}" >&2
@@ -123,6 +131,7 @@ docker run --rm \
   -w "${lab_root}" \
   harness-lab-api \
   python scripts/verify_m3.py \
+    "${verifier_mode_args[@]}" \
     --api-base http://api:8000 \
     --grafana-base http://lgtm:3000 \
     --proxy-base http://chaos-proxy:9000 \

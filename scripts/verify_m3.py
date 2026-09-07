@@ -1064,6 +1064,28 @@ class M3Verifier:
         write_redacted_evidence(self.output, result, self.secret_values)
         return result
 
+    def load_four_probe(self) -> dict[str, Any]:
+        arm = self._load_arm(4, "LOAD-FOUR-POOLWARM")
+        evidence = {"ok": False, "four_worker": arm}
+        try:
+            validate_api_capacity(
+                {
+                    "created": arm["count"],
+                    "concurrency": EXPERIMENT_SIZES["load_concurrency"],
+                    "post_p95_ms": arm["post_p95_ms"],
+                }
+            )
+            if arm["terminal"] != EXPERIMENT_SIZES["load_arm_runs"] or arm["failed"] != 0:
+                raise AssertionError(
+                    "four-worker load probe did not complete 500 runs cleanly"
+                )
+        except AssertionError:
+            write_redacted_evidence(self.output, evidence, self.secret_values)
+            raise
+        evidence["ok"] = True
+        write_redacted_evidence(self.output, evidence, self.secret_values)
+        return evidence
+
     def _read_sse(self, run_id: str, last_event_id: int, max_events: int | None) -> list[int]:
         headers = {"Accept": "text/event-stream"}
         if last_event_id:
@@ -1217,6 +1239,7 @@ def main() -> int:
     parser.add_argument("--env-file", type=Path, default=DEFAULT_ENV)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--api-capacity-only", action="store_true")
+    parser.add_argument("--load-four-only", action="store_true")
     args = parser.parse_args()
     values = parse_dotenv(args.env_file)
     secrets = [
@@ -1236,7 +1259,14 @@ def main() -> int:
         secret_values=secrets,
     )
     try:
-        evidence = verifier.api_capacity_probe() if args.api_capacity_only else verifier.run()
+        if args.api_capacity_only and args.load_four_only:
+            raise ValueError("choose only one diagnostic mode")
+        if args.api_capacity_only:
+            evidence = verifier.api_capacity_probe()
+        elif args.load_four_only:
+            evidence = verifier.load_four_probe()
+        else:
+            evidence = verifier.run()
     except Exception as error:
         write_redacted_evidence(
             args.output.parent / "failure.json",
@@ -1252,7 +1282,7 @@ def main() -> int:
         raise
     finally:
         verifier.close()
-    if args.api_capacity_only:
+    if args.api_capacity_only or args.load_four_only:
         print(json.dumps(evidence))
     else:
         print(json.dumps({"all_passed": evidence["all_passed"], "gates": evidence["gates"]}))

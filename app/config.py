@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     )
 
     database_url: str = "postgresql+psycopg://postgres:harness@postgres:5432/harness"
+    database_pool_size: int = Field(default=5, ge=1, le=20)
+    database_max_overflow: int = Field(default=10, ge=0, le=20)
+    database_pool_warm_connections: int = Field(default=0, ge=0, le=20)
     test_database_url: str = "postgresql+psycopg://postgres:harness@127.0.0.1:5432/harness"
     redis_url: str = "redis://redis:6379/0"
     test_redis_url: str = "redis://127.0.0.1:6379/0"

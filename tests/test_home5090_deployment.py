@@ -122,6 +122,16 @@ def test_m3_gate8_has_fresh_database_redis_and_evidence_namespaces() -> None:
     assert "artifacts/m3/gate8/gate_m3.json" in script
 
 
+def test_poolwarm_load_probe_has_fresh_namespace_and_mode() -> None:
+    script = (LAB_ROOT / "scripts" / "run_verify_m3_home5090.sh").read_text(encoding="utf-8")
+
+    assert "poolwarm_probe" in script
+    assert "harness_m3_poolwarm_probe" in script
+    assert "redis://redis:6379/9" in script
+    assert "artifacts/m3/diagnostics/load_four_poolwarm.json" in script
+    assert "--load-four-only" in script
+
+
 def test_m3_wrapper_rebuilds_every_python_service_before_injection() -> None:
     script = (LAB_ROOT / "scripts" / "run_verify_m3_home5090.sh").read_text(encoding="utf-8")
 

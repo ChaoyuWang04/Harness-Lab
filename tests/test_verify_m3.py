@@ -248,6 +248,14 @@ def test_load_arm_and_api_probe_use_the_hey_request_path() -> None:
     assert source.count("use_idempotency_keys=False") >= 2
 
 
+def test_four_worker_load_probe_preserves_full_arm_and_150ms_gate() -> None:
+    source = VERIFIER.read_text(encoding="utf-8")
+
+    assert "def load_four_probe" in source
+    assert 'self._load_arm(4, "LOAD-FOUR-POOLWARM")' in source
+    assert 'parser.add_argument("--load-four-only", action="store_true")' in source
+
+
 def test_failed_api_capacity_probe_still_writes_numeric_evidence(tmp_path: Path) -> None:
     verifier = load_verifier()
     probe = object.__new__(verifier.M3Verifier)
