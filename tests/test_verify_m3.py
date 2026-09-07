@@ -80,6 +80,38 @@ def test_gate2_accepts_redis_db2_but_rejects_normal_db0(tmp_path: Path) -> None:
         verifier.M3Verifier(redis_url="redis://redis:6379/0", **kwargs)
 
 
+def test_wait_for_value_allows_dispatcher_poll_to_converge() -> None:
+    verifier = load_verifier()
+    values = iter(["pending", "pending", "dispatched"])
+    clock = iter([0.0, 0.1, 0.2, 0.3])
+
+    result = verifier.wait_for_value(
+        lambda: next(values),
+        "dispatched",
+        timeout_seconds=1,
+        sleep=lambda _seconds: None,
+        monotonic=lambda: next(clock),
+    )
+
+    assert result == "dispatched"
+
+
+def test_wait_for_value_returns_last_value_at_timeout() -> None:
+    verifier = load_verifier()
+    clock = iter([0.0, 1.0])
+
+    assert (
+        verifier.wait_for_value(
+            lambda: "pending",
+            "dispatched",
+            timeout_seconds=0.5,
+            sleep=lambda _seconds: None,
+            monotonic=lambda: next(clock),
+        )
+        == "pending"
+    )
+
+
 def test_summarize_run_timings_uses_event_timestamps() -> None:
     verifier = load_verifier()
     origin = datetime(2026, 9, 7, tzinfo=timezone.utc)

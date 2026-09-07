@@ -82,6 +82,14 @@ def test_m3_gate3_has_fresh_database_redis_and_evidence_namespaces() -> None:
     assert "artifacts/m3/gate3/gate_m3.json" in script
 
 
+def test_m3_gate4_has_fresh_database_redis_and_evidence_namespaces() -> None:
+    script = (LAB_ROOT / "scripts" / "run_verify_m3_home5090.sh").read_text(encoding="utf-8")
+
+    assert "harness_m3_gate4" in script
+    assert "redis://redis:6379/4" in script
+    assert "artifacts/m3/gate4/gate_m3.json" in script
+
+
 def test_m3_wrapper_rebuilds_every_python_service_before_injection() -> None:
     script = (LAB_ROOT / "scripts" / "run_verify_m3_home5090.sh").read_text(encoding="utf-8")
 

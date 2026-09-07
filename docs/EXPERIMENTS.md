@@ -160,6 +160,20 @@
 - 新正对照：wrapper 在任何 run 前构建 api/dispatcher/worker/sweeper/migrate/chaos-proxy 全部镜像，并要求 dispatcher 镜像能导入一次性 crash hook；随后仍须通过 3/3 精确工具参数探针
 - 判据与停止线：与 `[M3-PRE]` 完全一致。任一项失败即保留 Gate 3 并停止，不把前两次通过的局部结果拼接成总体通过
 
+### [M3-GATE-3] EXP-2 收敛观测竞态并停止
+
+- 时间：2026-09-08 CST
+- EXP-1：本轮独立 10/10 completed，最大恢复时间 44.360 秒，十次审计均恰好一条，PASS
+- EXP-2：dispatcher 真实以 code 91 退出，崩溃窗口 outbox 为 pending，run 最终 completed，started/terminal 各一条；但验收器在恢复 dispatcher 后立即读取 outbox，先于其下一次 1 秒轮询，读到最终状态仍为 pending，因而 FAIL 并停止 EXP-3～6
+- 根因与修复：这是验收器的收敛竞态，不是注入缺失。最终判据仍要求 outbox=`dispatched`，但允许在恢复后轮询最多 10 秒；超时仍按最后读数失败。Gate 3 数据和 `artifacts/m3/gate3/` 保留
+
+### [M3-GATE-4-PRE] Dispatcher 收敛修复后的全量复验
+
+- 时间：2026-09-08 CST；沿用用户要求完整完成 M3 的授权
+- 隔离：新 PostgreSQL 数据库 `harness_m3_gate4`、Redis DB 4 和 `artifacts/m3/gate4/`；前三轮证据均不覆盖
+- 新回归：dispatcher 恢复后最多等待 10 秒收敛到 dispatched；此等待只消除采样竞态，不改变退出码 91、crash 后 pending、started/terminal 各一条等原判据
+- 其他判据、输入前置、镜像正对照、资源停止线和失败即停规则与 `[M3-PRE]` 完全一致
+
 ## 运行面迁移 · 独立 Git + home-5090
 
 ### [MIG-G1] Git 边界

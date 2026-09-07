@@ -15,6 +15,7 @@ import sys
 import time
 import urllib.parse
 import urllib.request
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
@@ -93,6 +94,22 @@ def validate_tool_contract(calls: list[dict[str, Any]]) -> dict[str, Any]:
     if len(calls) != 3 or len(valid) != 3:
         raise AssertionError("M3 tool contract preflight requires 3/3 exact calls")
     return {"ok": True, "sample_count": 3, "calls": calls}
+
+
+def wait_for_value(
+    read: Callable[[], Any],
+    expected: Any,
+    *,
+    timeout_seconds: float,
+    sleep: Callable[[float], None] = time.sleep,
+    monotonic: Callable[[], float] = time.monotonic,
+) -> Any:
+    deadline = monotonic() + timeout_seconds
+    value = read()
+    while value != expected and monotonic() < deadline:
+        sleep(0.2)
+        value = read()
+    return value
 
 
 def summarize_run_timings(runs: list[dict[str, Any]]) -> dict[str, Any]:
@@ -725,10 +742,17 @@ class M3Verifier:
         terminal_events = sum(
             event["type"] in {"run.completed", "run.failed"} for event in record["events"]
         )
-        with self.sessions() as session:
-            outbox_status = session.scalar(
-                select(OutboxJob.status).where(OutboxJob.payload["run_id"].astext == run_id)
-            )
+        def read_outbox_status() -> str | None:
+            with self.sessions() as session:
+                return session.scalar(
+                    select(OutboxJob.status).where(OutboxJob.payload["run_id"].astext == run_id)
+                )
+
+        outbox_status = wait_for_value(
+            read_outbox_status,
+            "dispatched",
+            timeout_seconds=10,
+        )
         evidence = {
             "ok": bool(
                 exit_code == 91
