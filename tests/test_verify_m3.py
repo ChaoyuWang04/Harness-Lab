@@ -171,6 +171,42 @@ def test_load_gate_requires_post_latency_and_fifty_percent_queue_improvement() -
         verifier.validate_load_arms(one, {**four, "queue_lag_p95_seconds": 60})
 
 
+def test_provider_gate_requires_alert_in_at_least_one_degraded_arm() -> None:
+    verifier = load_verifier()
+    rate_limited = {
+        "completed": 29,
+        "retry_events": 44,
+        "failure_codes": {
+            "MODEL_429": 1,
+            "MODEL_TIMEOUT": 0,
+            "MODEL_5XX": 0,
+            "BAD_OUTPUT": 0,
+            "INTERNAL_ERROR": 0,
+        },
+        "alert_fired": False,
+        "proxy": {"counts": {"429": 45}},
+    }
+    timed_out = {
+        "completed": 29,
+        "retry_events": 33,
+        "failure_codes": {
+            "MODEL_429": 0,
+            "MODEL_TIMEOUT": 1,
+            "MODEL_5XX": 0,
+            "BAD_OUTPUT": 0,
+            "INTERNAL_ERROR": 0,
+        },
+        "alert_fired": True,
+        "proxy": {"counts": {"timeout": 34}},
+    }
+
+    assert verifier.validate_provider_degradation(rate_limited, timed_out, True) is True
+    with pytest.raises(AssertionError, match="alert"):
+        verifier.validate_provider_degradation(
+            rate_limited, {**timed_out, "alert_fired": False}, True
+        )
+
+
 def test_sse_gate_requires_exact_sequences_without_duplicates() -> None:
     verifier = load_verifier()
     clients = [

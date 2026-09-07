@@ -204,6 +204,22 @@
 - EXP-3 策略：Redis 宕机期间仍严格创建 60 条且不启动消费；Redis 恢复后扩至四 worker，仍要求 120 秒内 60/60 终态、Outbox pending=0、零丢失。普通运行面最终恢复为单 worker
 - 其他样本数、故障比例、时限、输入前置、镜像/marker 正对照、资源停止线与失败即停规则均与 `[M3-PRE]` 相同
 
+### [M3-GATE-6] EXP-4 告警判据被验收器错误收紧并停止
+
+- 时间：2026-09-08 CST
+- EXP-1：10/10 completed，最大恢复 44.428 秒，审计均恰好一条，PASS。EXP-2：dispatcher code 91，pending 窗口、唯一 started/terminal、最终 dispatched 全部成立，PASS
+- EXP-3：60/60 POST 成功，宕机期间 queued=60、pending Outbox=60；Redis 恢复后四 worker 在 39.819 秒内完成 60/60，最终 pending=0，PASS
+- EXP-4：正常臂 30/30；429 臂 29/30 completed、44 次 retry、45 个注入 429，唯一失败为 `MODEL_429`；timeout 臂 29/30 completed、33 次 retry、34 个注入 timeout，唯一失败为 `MODEL_TIMEOUT`。timeout 臂告警 Firing，零故障恢复后 Resolved；429 臂未 Firing，验收器因此判 FAIL 并停止 EXP-5/6
+- 根因：文件计划只要求“退化期间”queue alert 进入 Firing，验收器却额外要求 429 和 timeout 两臂分别都 Firing。429 臂 queue-lag P95=122.837 秒，但 backlog 在 `>10 秒持续 2 分钟` 加 10 秒评估对齐完成前清空；把及时消化也判失败，会错误鼓励降低恢复速度
+- 处理：恢复原注册语义——至少一个真实退化臂触发 queue alert；两臂仍分别要求 30 条、固定注入比例、retry>0、completed≥70%、注入计数>0、错误码纯净，恢复后仍须 Resolved。不改任何数值阈值、样本量或告警规则；Gate 6 全部证据保留
+
+### [M3-GATE-7-PRE] 退化期间告警语义修正后的全量复验
+
+- 时间：2026-09-08 CST；沿用用户要求按推荐方案完整完成 M3 的授权
+- 隔离：新 PostgreSQL 数据库 `harness_m3_gate7`、Redis DB 7 和 `artifacts/m3/gate7/`；Gate 1～6 均不删除、不覆盖
+- EXP-4 判据：429 与 timeout 两臂各自仍须完成所有原机制判据；两臂中至少一个使现有 queue alert 真实 Firing，恢复后必须 Resolved。该修正移除的是验收器未注册的额外 AND，不改变 Grafana 的 `>10s for 2m` 规则
+- EXP-1～3、5～6 和全局 Gate 的样本数、时限、资源停止线、正对照、失败即停规则继续沿用 `[M3-PRE]`
+
 ## 运行面迁移 · 独立 Git + home-5090
 
 ### [MIG-G1] Git 边界

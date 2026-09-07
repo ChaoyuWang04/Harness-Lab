@@ -173,6 +173,36 @@ def validate_load_arms(one: dict[str, Any], four: dict[str, Any]) -> dict[str, A
     }
 
 
+def validate_provider_degradation(
+    rate_limited: dict[str, Any], timed_out: dict[str, Any], recovered: bool
+) -> bool:
+    if rate_limited["completed"] / 30 < 0.70 or timed_out["completed"] / 30 < 0.70:
+        raise AssertionError("provider degraded arm completion rate was below 70%")
+    if rate_limited["retry_events"] <= 0 or timed_out["retry_events"] <= 0:
+        raise AssertionError("provider degraded arm did not record retry events")
+    if rate_limited["proxy"]["counts"]["429"] <= 0:
+        raise AssertionError("429 arm did not inject a visible 429")
+    if timed_out["proxy"]["counts"]["timeout"] <= 0:
+        raise AssertionError("timeout arm did not inject a visible timeout")
+    if any(
+        count != 0
+        for code, count in rate_limited["failure_codes"].items()
+        if code != "MODEL_429"
+    ):
+        raise AssertionError("429 arm contained an unexpected failure code")
+    if any(
+        count != 0
+        for code, count in timed_out["failure_codes"].items()
+        if code != "MODEL_TIMEOUT"
+    ):
+        raise AssertionError("timeout arm contained an unexpected failure code")
+    if not (rate_limited["alert_fired"] or timed_out["alert_fired"]):
+        raise AssertionError("queue alert did not fire during either degraded arm")
+    if not recovered:
+        raise AssertionError("queue alert did not resolve after provider recovery")
+    return True
+
+
 def validate_sse_clients(clients: list[dict[str, Any]]) -> dict[str, Any]:
     if len(clients) != EXPERIMENT_SIZES["sse_clients"]:
         raise AssertionError("SSE gate requires exactly 20 clients")
@@ -917,35 +947,19 @@ class M3Verifier:
         self.configure_proxy()
         recovered = self.wait_alert_resolved()
         evidence = {
-            "ok": bool(
-                rate_limited["completed"] / 30 >= 0.70
-                and timed_out["completed"] / 30 >= 0.70
-                and rate_limited["retry_events"] > 0
-                and timed_out["retry_events"] > 0
-                and rate_limited["proxy"]["counts"]["429"] > 0
-                and timed_out["proxy"]["counts"]["timeout"] > 0
-                and all(
-                    count == 0
-                    for code, count in rate_limited["failure_codes"].items()
-                    if code != "MODEL_429"
-                )
-                and all(
-                    count == 0
-                    for code, count in timed_out["failure_codes"].items()
-                    if code != "MODEL_TIMEOUT"
-                )
-                and rate_limited["alert_fired"]
-                and timed_out["alert_fired"]
-                and recovered
-            ),
+            "ok": False,
             "normal": normal,
             "rate_429": rate_limited,
             "timeout": timed_out,
             "alert_recovered": recovered,
         }
+        try:
+            validate_provider_degradation(rate_limited, timed_out, recovered)
+        except AssertionError:
+            self.save_experiment("EXP-4", evidence)
+            raise
+        evidence["ok"] = True
         self.save_experiment("EXP-4", evidence)
-        if not evidence["ok"]:
-            raise AssertionError("provider degradation experiment failed registered invariants")
         return evidence
 
     def _load_arm(self, workers: int, name: str) -> dict[str, Any]:
