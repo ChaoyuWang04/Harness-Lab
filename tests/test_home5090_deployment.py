@@ -57,6 +57,7 @@ def test_m3_gate_uses_isolated_database_and_always_restores_normal_runtime() -> 
     assert "--profile m3" in script
     assert "harness-lab_default" in script
     assert "/var/run/docker.sock:/var/run/docker.sock" in script
+    assert '"${lab_root}:${lab_root}"' in script
     assert "python tests/test_outbox.py" in script
     assert "python scripts/verify_m3.py" in script
     assert "--scale worker=1" in script

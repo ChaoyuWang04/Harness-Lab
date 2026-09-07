@@ -33,8 +33,8 @@ docker run --rm \
   --network harness-lab_default \
   -e TEST_DATABASE_URL="${m3_test_database_url}" \
   -e TEST_REDIS_URL="${m3_redis_url}" \
-  -v "${lab_root}:/workspace" \
-  -w /workspace \
+  -v "${lab_root}:${lab_root}" \
+  -w "${lab_root}" \
   harness-lab-api \
   python tests/test_outbox.py
 
@@ -58,8 +58,8 @@ docker run --rm \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v /usr/bin/docker:/usr/bin/docker:ro \
   -v /usr/libexec/docker/cli-plugins/docker-compose:/usr/libexec/docker/cli-plugins/docker-compose:ro \
-  -v "${lab_root}:/workspace" \
-  -w /workspace \
+  -v "${lab_root}:${lab_root}" \
+  -w "${lab_root}" \
   harness-lab-api \
   python scripts/verify_m3.py \
     --api-base http://api:8000 \

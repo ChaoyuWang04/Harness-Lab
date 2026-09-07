@@ -269,14 +269,20 @@ class M3Verifier:
         environment.update(self.compose_env)
         if overrides:
             environment.update(overrides)
-        return subprocess.run(
+        result = subprocess.run(
             ["docker", "compose", "--env-file", str(self.env_file), "--profile", "m3", *arguments],
             cwd=LAB_ROOT,
             env=environment,
-            check=check,
+            check=False,
             text=True,
             capture_output=True,
         )
+        if check and result.returncode:
+            diagnostic = (result.stderr or result.stdout).strip()[-4000:]
+            raise RuntimeError(
+                f"M3 Compose command failed ({result.returncode}): {arguments!r}: {diagnostic}"
+            )
+        return result
 
     def _wait_http(self, url: str, timeout_seconds: float = 120) -> Any:
         deadline = time.monotonic() + timeout_seconds

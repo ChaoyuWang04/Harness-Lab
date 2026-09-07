@@ -126,3 +126,10 @@ def test_run_event_records_retain_timestamps_for_recovery_measurement() -> None:
     source = (LAB_ROOT / "scripts" / "verify_m3.py").read_text(encoding="utf-8")
 
     assert '"created_at": event.created_at' in source
+
+
+def test_compose_failures_include_captured_diagnostics() -> None:
+    source = (LAB_ROOT / "scripts" / "verify_m3.py").read_text(encoding="utf-8")
+
+    assert "M3 Compose command failed" in source
+    assert "result.stderr" in source
