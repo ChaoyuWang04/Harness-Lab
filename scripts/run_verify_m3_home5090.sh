@@ -36,6 +36,12 @@ case "${gate_id}" in
     m3_redis_url="redis://redis:6379/5"
     m3_output="${lab_root}/artifacts/m3/gate5/gate_m3.json"
     ;;
+  gate6)
+    m3_database_name="harness_m3_gate6"
+    m3_test_database_name="harness_m3_gate6_test"
+    m3_redis_url="redis://redis:6379/6"
+    m3_output="${lab_root}/artifacts/m3/gate6/gate_m3.json"
+    ;;
   *)
     echo "Unsupported M3 gate id: ${gate_id}" >&2
     exit 2

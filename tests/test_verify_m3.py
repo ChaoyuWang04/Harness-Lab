@@ -34,6 +34,14 @@ def test_registered_experiment_sizes_are_fixed() -> None:
     }
 
 
+def test_redis_outage_uses_four_workers_for_bounded_recovery() -> None:
+    verifier = load_verifier()
+    source = VERIFIER.read_text(encoding="utf-8")
+
+    assert verifier.REDIS_RECOVERY_WORKERS == 4
+    assert "self.scale_workers(REDIS_RECOVERY_WORKERS)" in source
+
+
 def test_m3_tool_arms_reuse_the_verified_exact_campaign_instruction() -> None:
     verifier = load_verifier()
     source = VERIFIER.read_text(encoding="utf-8")

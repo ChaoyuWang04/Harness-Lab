@@ -188,6 +188,22 @@
 - 新正对照：全 Python 镜像构建与 hook import 后，精确复位单个 dispatcher marker，再执行 3/3 工具参数探针；所有动作都发生在首个实验 run 前
 - 判据与停止线：继续完全沿用 `[M3-PRE]`，不拼接前轮局部 PASS
 
+### [M3-GATE-5] EXP-3 单 worker 恢复容量不足并停止
+
+- 时间：2026-09-08 CST
+- EXP-1：本轮独立 10/10 completed，全部由 attempt 2 接管，最大恢复时间 44.361 秒，十次审计均恰好一条，PASS
+- EXP-2：dispatcher 真实以 code 91 退出，崩溃窗口 outbox 为 pending；run 最终 completed，started/terminal 各一条，outbox 最终 dispatched，PASS
+- EXP-3：Redis 恢复后 120 秒截止时仅 48/60 条进入终态，FAIL 并停止 EXP-4～6。恢复普通运行面前的数据库复核为 completed=50、queued=10；60/60 Outbox 均已 dispatched，因此失败位于消费容量，不是 Outbox 丢失或恢复投递失败
+- 根因：验收器在恢复 Redis 后额外固定为单 worker；已完成的 50 条终态跨度约 131.5 秒，单 worker 的实测完成速率约 22.8 run/min，不足以在原定 120 秒内消化 60 条。原计划没有规定恢复阶段必须保持单 worker，并已在 EXP-5 明确要求验证四 worker 扩缩容
+- 处理：不延长 120 秒、不减少 60 条、不覆盖 Gate 5。恢复策略改为 Redis 就绪后立即扩至四 worker，Gate 结束仍由 trap 恢复普通单 worker；用新的 Gate 6 独立复验全部六项
+
+### [M3-GATE-6-PRE] 四 worker 有界恢复策略的全量复验
+
+- 时间：2026-09-08 CST；沿用用户要求按推荐方案完整完成 M3 的授权
+- 隔离：新 PostgreSQL 数据库 `harness_m3_gate6`、Redis DB 6 和 `artifacts/m3/gate6/`；Gate 1～5 均不删除、不覆盖
+- EXP-3 策略：Redis 宕机期间仍严格创建 60 条且不启动消费；Redis 恢复后扩至四 worker，仍要求 120 秒内 60/60 终态、Outbox pending=0、零丢失。普通运行面最终恢复为单 worker
+- 其他样本数、故障比例、时限、输入前置、镜像/marker 正对照、资源停止线与失败即停规则均与 `[M3-PRE]` 相同
+
 ## 运行面迁移 · 独立 Git + home-5090
 
 ### [MIG-G1] Git 边界

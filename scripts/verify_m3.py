@@ -37,6 +37,7 @@ from app.models import AgentRun, BudgetAudit, OutboxJob, RunEvent, ToolCall  # n
 DEFAULT_OUTPUT = LAB_ROOT / "artifacts" / "m3" / "gate_m3.json"
 DEFAULT_ENV = LAB_ROOT / "secrets" / ".env"
 TERMINAL = {"completed", "failed", "cancelled"}
+REDIS_RECOVERY_WORKERS = 4
 EXACT_CAMPAIGN_INSTRUCTION = (
     "调用工具时必须原样保留标识符，campaign_id 必须是精确字符串 camp_001，"
     "不得省略 camp_ 前缀。"
@@ -819,7 +820,7 @@ class M3Verifier:
             else:
                 raise AssertionError("Redis did not recover")
             self.configure_dispatcher(crash_after_publish=False)
-            self.scale_workers(1)
+            self.scale_workers(REDIS_RECOVERY_WORKERS)
         recovery_started = time.monotonic()
         views, _ = self.wait_runs(run_ids, timeout_seconds=120)
         drain_seconds = time.monotonic() - recovery_started
@@ -837,6 +838,7 @@ class M3Verifier:
             "post_p95_ms": round(_percentile(post_ms, 0.95), 3),
             "queued_while_down": queued_during,
             "pending_outbox_while_down": pending_during,
+            "recovery_workers": REDIS_RECOVERY_WORKERS,
             "terminal_after_recovery": len(views),
             "drain_seconds": round(drain_seconds, 3),
             "run_ids_sha256": self._run_id_digest(run_ids),
