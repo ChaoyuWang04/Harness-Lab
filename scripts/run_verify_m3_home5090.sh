@@ -4,9 +4,27 @@ set -euo pipefail
 lab_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${lab_root}"
 
-m3_database_url="postgresql+psycopg://postgres:harness@postgres:5432/harness_m3"
-m3_test_database_url="postgresql+psycopg://postgres:harness@postgres:5432/harness_m3_test"
-m3_redis_url="redis://redis:6379/1"
+gate_id="${1:-gate1}"
+case "${gate_id}" in
+  gate1)
+    m3_database_name="harness_m3"
+    m3_test_database_name="harness_m3_test"
+    m3_redis_url="redis://redis:6379/1"
+    m3_output="${lab_root}/artifacts/m3/gate_m3.json"
+    ;;
+  gate2)
+    m3_database_name="harness_m3_gate2"
+    m3_test_database_name="harness_m3_gate2_test"
+    m3_redis_url="redis://redis:6379/2"
+    m3_output="${lab_root}/artifacts/m3/gate2/gate_m3.json"
+    ;;
+  *)
+    echo "Unsupported M3 gate id: ${gate_id}" >&2
+    exit 2
+    ;;
+esac
+m3_database_url="postgresql+psycopg://postgres:harness@postgres:5432/${m3_database_name}"
+m3_test_database_url="postgresql+psycopg://postgres:harness@postgres:5432/${m3_test_database_name}"
 m3_llm_url="http://chaos-proxy:9000/v1"
 compose=(docker compose --env-file secrets/.env --profile m3)
 
@@ -19,10 +37,11 @@ trap restore_normal_runtime EXIT
 
 "${compose[@]}" build api chaos-proxy
 docker compose --env-file secrets/.env exec -T postgres sh -c \
-  "psql -U postgres -d postgres -tAc \"SELECT 1 FROM pg_database WHERE datname='harness_m3'\" | grep -q 1 || psql -U postgres -d postgres -c \"CREATE DATABASE harness_m3\""
+  "psql -U postgres -d postgres -tAc \"SELECT 1 FROM pg_database WHERE datname='${m3_database_name}'\" | grep -q 1 || psql -U postgres -d postgres -c \"CREATE DATABASE ${m3_database_name}\""
 docker compose --env-file secrets/.env exec -T postgres sh -c \
-  "psql -U postgres -d postgres -tAc \"SELECT 1 FROM pg_database WHERE datname='harness_m3_test'\" | grep -q 1 || psql -U postgres -d postgres -c \"CREATE DATABASE harness_m3_test\""
-docker compose --env-file secrets/.env exec -T redis redis-cli -n 1 FLUSHDB >/dev/null
+  "psql -U postgres -d postgres -tAc \"SELECT 1 FROM pg_database WHERE datname='${m3_test_database_name}'\" | grep -q 1 || psql -U postgres -d postgres -c \"CREATE DATABASE ${m3_test_database_name}\""
+redis_database="${m3_redis_url##*/}"
+docker compose --env-file secrets/.env exec -T redis redis-cli -n "${redis_database}" FLUSHDB >/dev/null
 
 HARNESS_COMPOSE_DATABASE_URL="${m3_database_url}" \
   "${compose[@]}" run --rm migrate
@@ -67,4 +86,5 @@ docker run --rm \
     --proxy-base http://chaos-proxy:9000 \
     --database-url "${m3_database_url}" \
     --normal-database-url postgresql+psycopg://postgres:harness@postgres:5432/harness \
-    --redis-url "${m3_redis_url}"
+    --redis-url "${m3_redis_url}" \
+    --output "${m3_output}"

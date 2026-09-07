@@ -27,6 +27,9 @@ from sqlalchemy.orm import Session, sessionmaker
 LAB_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(LAB_ROOT))
 
+from app.agent.llm import OllamaClient  # noqa: E402
+from app.agent.loop import SYSTEM_PROMPT  # noqa: E402
+from app.agent.tools import TOOL_SCHEMAS  # noqa: E402
 from app.models import AgentRun, BudgetAudit, OutboxJob, RunEvent, ToolCall  # noqa: E402
 
 
@@ -76,6 +79,20 @@ def parse_memory_to_mib(raw: str) -> float:
         "GB": 1000,
         "TB": 1000 * 1000,
     }[unit]
+
+
+def validate_tool_contract(calls: list[dict[str, Any]]) -> dict[str, Any]:
+    valid = [
+        call
+        for call in calls
+        if int(call.get("call_count", 1)) == 1
+        and call.get("tool_name") == "adjust_budget"
+        and call.get("campaign_id") == "camp_001"
+        and float(call.get("delta", math.nan)) == 1
+    ]
+    if len(calls) != 3 or len(valid) != 3:
+        raise AssertionError("M3 tool contract preflight requires 3/3 exact calls")
+    return {"ok": True, "sample_count": 3, "calls": calls}
 
 
 def summarize_run_timings(runs: list[dict[str, Any]]) -> dict[str, Any]:
@@ -507,6 +524,50 @@ class M3Verifier:
             evidence,
             self.secret_values,
         )
+
+    def preflight_tool_contract(self) -> dict[str, Any]:
+        self.configure_proxy()
+        client = OllamaClient(base_url=f"{self.proxy_base}/v1")
+        prompt = (
+            "[M3-PREFLIGHT] 将 camp_001 的预算增加 1；必须调用 adjust_budget。"
+            f"{EXACT_CAMPAIGN_INSTRUCTION}"
+        )
+        calls: list[dict[str, Any]] = []
+        for _ in range(3):
+            turn = client.complete(
+                [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ],
+                TOOL_SCHEMAS,
+            )
+            record: dict[str, Any] = {"call_count": len(turn.tool_calls)}
+            if len(turn.tool_calls) == 1:
+                call = turn.tool_calls[0]
+                record["tool_name"] = call.name
+                try:
+                    arguments = json.loads(call.arguments)
+                except json.JSONDecodeError:
+                    arguments = {}
+                if isinstance(arguments, dict):
+                    record["campaign_id"] = arguments.get("campaign_id")
+                    record["delta"] = arguments.get("delta")
+            calls.append(record)
+        try:
+            evidence = validate_tool_contract(calls)
+        except AssertionError:
+            write_redacted_evidence(
+                self.output.parent / "preflight_tool_contract.json",
+                {"ok": False, "calls": calls},
+                self.secret_values,
+            )
+            raise
+        write_redacted_evidence(
+            self.output.parent / "preflight_tool_contract.json",
+            evidence,
+            self.secret_values,
+        )
+        return evidence
 
     def resource_snapshot(self) -> dict[str, Any]:
         stats = subprocess.check_output(
@@ -996,6 +1057,7 @@ class M3Verifier:
         self._wait_http(f"{self.proxy_base}/health")
         if self.normal_database_m3_rows() != 0:
             raise AssertionError("normal harness database already contains M3-tagged runs")
+        preflight = self.preflight_tool_contract()
         resources_before = self.resource_snapshot()
         self.experiment_worker_crash()
         self.experiment_dispatcher_crash()
@@ -1024,6 +1086,7 @@ class M3Verifier:
             "duplicate_audit_keys": duplicate_keys,
             "comparison": self.comparison,
             "normal_database_m3_rows": normal_database_rows,
+            "tool_contract_preflight": preflight,
             "resources_before": resources_before,
             "resources_after": self.resource_snapshot(),
         }

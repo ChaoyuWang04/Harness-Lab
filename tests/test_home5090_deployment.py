@@ -61,3 +61,14 @@ def test_m3_gate_uses_isolated_database_and_always_restores_normal_runtime() -> 
     assert "python tests/test_outbox.py" in script
     assert "python scripts/verify_m3.py" in script
     assert "--scale worker=1" in script
+
+
+def test_m3_gate2_has_fresh_database_redis_and_evidence_namespaces() -> None:
+    script = (LAB_ROOT / "scripts" / "run_verify_m3_home5090.sh").read_text(encoding="utf-8")
+
+    assert 'gate_id="${1:-gate1}"' in script
+    assert "harness_m3_gate2" in script
+    assert "redis://redis:6379/2" in script
+    assert "artifacts/m3/gate2/gate_m3.json" in script
+    assert 'case "${gate_id}"' in script
+    assert "--output" in script

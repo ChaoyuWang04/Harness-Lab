@@ -137,6 +137,14 @@
 - 结论：FAIL / STOP。它证明本轮输入契约不满足注入前置条件，不构成 worker 恢复机制失败。失败数据库和 `artifacts/m3/exp_1.json`、`failure.json` 保留；普通单 worker、Redis、dispatcher、sweeper 和正常 `harness` 数据库已由 trap 恢复
 - 修复：M3 所有工具臂已改为明确要求 `campaign_id` 是精确字符串 `camp_001` 且不得省略前缀；阈值、样本数和故障方式不变。若执行新的正式 Gate，必须使用新的隔离数据库/Redis namespace 和独立证据目录，不能覆盖本轮失败
 
+### [M3-GATE-2-PRE] 修复后独立复验
+
+- 时间：2026-09-08 CST；用户已明确批准按推荐方案重新完整执行
+- 隔离：使用新 PostgreSQL 数据库 `harness_m3_gate2`、Redis DB 2 和 `artifacts/m3/gate2/`；Gate 1 的数据库与证据保持不变
+- 输入前置：创建任何实验 run 前，以零故障 proxy 对相同模型执行 3 次只读工具参数探针；只有 3/3 都精确返回 `adjust_budget`、`campaign_id=camp_001`、`delta=1` 才进入 EXP-1
+- 判据：EXP-1～6 的样本数、故障比例、时限、延迟、成功率、资源停止线和最终全局 Gate 与 `[M3-PRE]` 完全相同，不因 Gate 1 失败调整
+- 停止：前置探针或任一注册实验失败即保留 Gate 2 证据并恢复普通运行面，不继续后续实验，也不覆盖 Gate 1
+
 ## 运行面迁移 · 独立 Git + home-5090
 
 ### [MIG-G1] Git 边界

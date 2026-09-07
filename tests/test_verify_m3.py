@@ -45,6 +45,22 @@ def test_m3_tool_arms_reuse_the_verified_exact_campaign_instruction() -> None:
     assert source.count("EXACT_CAMPAIGN_INSTRUCTION") >= 3
 
 
+def test_tool_contract_preflight_requires_three_exact_calls() -> None:
+    verifier = load_verifier()
+    calls = [
+        {"tool_name": "adjust_budget", "campaign_id": "camp_001", "delta": 1}
+        for _ in range(3)
+    ]
+
+    assert verifier.validate_tool_contract(calls)["ok"] is True
+    with pytest.raises(AssertionError, match="3/3"):
+        verifier.validate_tool_contract([{**calls[0], "campaign_id": "001"}, *calls[1:]])
+    with pytest.raises(AssertionError, match="3/3"):
+        verifier.validate_tool_contract(
+            [{"tool_name": "adjust_budget", "campaign_id": "camp_001"}, *calls[1:]]
+        )
+
+
 def test_summarize_run_timings_uses_event_timestamps() -> None:
     verifier = load_verifier()
     origin = datetime(2026, 9, 7, tzinfo=timezone.utc)
