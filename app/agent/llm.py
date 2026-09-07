@@ -30,7 +30,7 @@ class ChatClient(Protocol):
 class OllamaClient:
     def __init__(self, *, base_url: str | None = None, model: str | None = None) -> None:
         self.model = model or settings.llm_model
-        self._http_client = httpx2.Client(trust_env=False, timeout=120)
+        self._http_client = httpx2.Client(trust_env=False, timeout=settings.llm_timeout_seconds)
         self.client = OpenAI(
             base_url=base_url or settings.llm_base_url,
             api_key="ollama",

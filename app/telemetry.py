@@ -26,7 +26,7 @@ from app.config import settings
 
 RUN_STATUSES = frozenset({"queued", "running", "completed", "failed", "cancelled"})
 ERROR_CODES = frozenset(
-    {"MODEL_429", "MODEL_TIMEOUT", "BAD_OUTPUT", "TOOL_UNKNOWN", "TOOL_ERROR", "INTERNAL_ERROR", "MAX_RETRY"}
+    {"MODEL_429", "MODEL_TIMEOUT", "MODEL_5XX", "BAD_OUTPUT", "TOOL_UNKNOWN", "TOOL_ERROR", "INTERNAL_ERROR", "MAX_RETRY"}
 )
 HTTP_STATUSES = frozenset({"200", "429", "timeout", "error"})
 TOOL_NAMES = frozenset({"get_campaign", "get_report", "adjust_budget"})

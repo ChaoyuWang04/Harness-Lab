@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime, timezone
 from collections.abc import Callable
 
-from openai import APITimeoutError, RateLimitError
+from openai import APIStatusError, APITimeoutError, RateLimitError
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -31,6 +31,8 @@ def classify_error(error: BaseException) -> str:
         return "MODEL_429"
     if isinstance(error, APITimeoutError):
         return "MODEL_TIMEOUT"
+    if isinstance(error, APIStatusError) and error.status_code >= 500:
+        return "MODEL_5XX"
     if isinstance(error, BadOutput):
         return "BAD_OUTPUT"
     if isinstance(error, ToolResultUnknown):

@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Callable
 from typing import Any
 
-from openai import APITimeoutError, RateLimitError
+from openai import APIStatusError, APITimeoutError, RateLimitError
 from opentelemetry import trace
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -47,6 +48,9 @@ def run_agent(
     *,
     max_rounds: int = 6,
     pause_after_tool_seconds: float = 0,
+    max_model_retries: int | None = None,
+    retry_base_seconds: float | None = None,
+    sleep: Callable[[float], None] = time.sleep,
 ) -> dict[str, Any]:
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -63,36 +67,75 @@ def run_agent(
                 fence=fence,
             )
         tracer = trace.get_tracer("harness-lab.agent")
-        try:
-            with model_observation(
-                run_id,
-                step,
-                messages,
-                getattr(client, "model", settings.llm_model),
-            ) as observation:
-                turn = client.complete(messages, TOOL_SCHEMAS)
-                update_model_observation(
-                    observation,
-                    output={
-                        "content": turn.content,
-                        "tool_calls": [
-                            {"id": call.id, "name": call.name, "arguments": call.arguments}
-                            for call in turn.tool_calls
-                        ],
+        retries = settings.llm_max_retries if max_model_retries is None else max_model_retries
+        backoff = settings.llm_retry_base_seconds if retry_base_seconds is None else retry_base_seconds
+        for model_attempt in range(retries + 1):
+            retry_code = None
+            metric_status = "error"
+            last_error: BaseException | None = None
+            try:
+                with model_observation(
+                    run_id,
+                    step,
+                    messages,
+                    getattr(client, "model", settings.llm_model),
+                ) as observation:
+                    turn = client.complete(messages, TOOL_SCHEMAS)
+                    update_model_observation(
+                        observation,
+                        output={
+                            "content": turn.content,
+                            "tool_calls": [
+                                {"id": call.id, "name": call.name, "arguments": call.arguments}
+                                for call in turn.tool_calls
+                            ],
+                        },
+                        usage=turn.usage,
+                    )
+            except RateLimitError as exc:
+                last_error = exc
+                retry_code, metric_status = "MODEL_429", "429"
+                get_harness_metrics().record_model_call(metric_status)
+                error = True
+            except APITimeoutError as exc:
+                last_error = exc
+                retry_code, metric_status = "MODEL_TIMEOUT", "timeout"
+                get_harness_metrics().record_model_call(metric_status)
+                error = True
+            except APIStatusError as exc:
+                last_error = exc
+                get_harness_metrics().record_model_call(metric_status)
+                if exc.status_code < 500:
+                    raise
+                retry_code = "MODEL_5XX"
+                error = True
+            except Exception:
+                get_harness_metrics().record_model_call(metric_status)
+                raise
+            else:
+                get_harness_metrics().record_model_call("200")
+                error = False
+
+            if not error:
+                break
+            if model_attempt >= retries:
+                assert last_error is not None
+                raise last_error
+            delay = backoff * (2**model_attempt)
+            with session_factory.begin() as session:
+                append_event(
+                    session,
+                    run_id,
+                    "step.model_retry",
+                    {
+                        "step": step,
+                        "attempt": model_attempt + 1,
+                        "error_code": retry_code,
+                        "delay_seconds": delay,
                     },
-                    usage=turn.usage,
+                    fence=fence,
                 )
-        except RateLimitError:
-            get_harness_metrics().record_model_call("429")
-            raise
-        except APITimeoutError:
-            get_harness_metrics().record_model_call("timeout")
-            raise
-        except Exception:
-            get_harness_metrics().record_model_call("error")
-            raise
-        else:
-            get_harness_metrics().record_model_call("200")
+            sleep(delay)
         messages.append(_assistant_message(turn))
 
         if turn.tool_calls:

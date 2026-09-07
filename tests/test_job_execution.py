@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest import mock
 
 import httpx2
-from openai import APITimeoutError, RateLimitError
+from openai import APITimeoutError, InternalServerError, RateLimitError
 
 from sqlalchemy import create_engine, delete, select
 from sqlalchemy.orm import sessionmaker
@@ -37,6 +37,11 @@ class ErrorClassificationTests(unittest.TestCase):
         self.assertEqual(
             classify_error(RateLimitError("limited", response=response, body=None)),
             "MODEL_429",
+        )
+        server_response = httpx2.Response(503, request=request)
+        self.assertEqual(
+            classify_error(InternalServerError("unavailable", response=server_response, body=None)),
+            "MODEL_5XX",
         )
 
 
