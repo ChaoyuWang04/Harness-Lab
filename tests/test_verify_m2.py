@@ -131,6 +131,72 @@ def test_tempo_query_waits_for_eventual_indexing(monkeypatch: pytest.MonkeyPatch
     assert sleeps == [0.1]
 
 
+def test_cohort_observability_selects_a_run_with_complete_trace_and_langfuse(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    verifier = load_verifier()
+    runs = [{"run_id": "no-tool"}, {"run_id": "complete"}]
+
+    def fake_tempo(_base: str, run_id: str, **_kwargs):
+        if run_id == "no-tool":
+            raise AssertionError("missing tool span")
+        return {"ok": True, "run_id": run_id, "trace_id": "trace-1"}
+
+    monkeypatch.setattr(verifier, "query_tempo", fake_tempo)
+    monkeypatch.setattr(
+        verifier,
+        "query_langfuse",
+        lambda _values, run_id: {"ok": run_id == "complete", "round_count": 2},
+    )
+
+    result = verifier.query_cohort_observability("http://grafana.invalid", {}, runs, attempts=1)
+
+    assert result["run_id"] == "complete"
+    assert result["tempo"]["trace_id"] == "trace-1"
+    assert result["langfuse"]["round_count"] == 2
+
+
+def test_sentry_issue_evidence_must_match_probe_and_existing_screenshot(tmp_path: Path) -> None:
+    verifier = load_verifier()
+    screenshot = tmp_path / "artifacts" / "m2" / "issue.jpg"
+    screenshot.parent.mkdir(parents=True)
+    screenshot.write_bytes(b"visible evidence")
+    probe_path = screenshot.parent / "sentry_probe.json"
+    issue_path = screenshot.parent / "sentry_issue_verified.json"
+    probe_path.write_text(
+        json.dumps({"sent": True, "event_id": "event-1", "run_id": "run-1"}),
+        encoding="utf-8",
+    )
+    issue_path.write_text(
+        json.dumps(
+            {
+                "ok": True,
+                "event_id": "event-1",
+                "run_id": "run-1",
+                "screenshot": "artifacts/m2/issue.jpg",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = verifier.validate_sentry_issue(probe_path, issue_path, lab_root=tmp_path)
+
+    assert result["ok"] is True
+    issue_path.write_text(
+        json.dumps(
+            {
+                "ok": True,
+                "event_id": "wrong-event",
+                "run_id": "run-1",
+                "screenshot": "artifacts/m2/issue.jpg",
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(AssertionError, match="does not match"):
+        verifier.validate_sentry_issue(probe_path, issue_path, lab_root=tmp_path)
+
+
 def test_langfuse_reader_uses_direct_http_client(monkeypatch: pytest.MonkeyPatch) -> None:
     verifier = load_verifier()
     captured: dict[str, object] = {}

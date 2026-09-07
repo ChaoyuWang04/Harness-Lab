@@ -101,7 +101,8 @@
 - 回归：重建后 `scripts/verify_m1.py` 六项全部 PASS；最新完整集成回归为 93 passed / 1 skipped（隔离 `harness_test` 数据库）
 - 云端连接：Langfuse SDK `auth_check=True`；Sentry 受控 probe 已获得 event_id `53781a9083f04fc3ae5f9d9e681c4ea8`，关联 `run_id=run_sentry_m2_90524`，脱敏证据见 `artifacts/m2/sentry_probe.json`。这只证明 SDK 写入/认证，不替代 G3/G4 的页面和字段验收
 - 资源：迁移前 Mac 读数为启动 LGTM 前约 359.65 MiB、全栈约 1,552.54 MiB。迁移后 `home-5090` Docker memory 为 33,237,381,120 bytes；修复复验时八项服务齐全，合计约 1,255 MiB，低于 4 GiB 停止线；OOM=0、restart=0。最终值仍由唯一 30-run Gate 重测
-- 当前未验：Sentry issue 页面尚未形成指定 event_id + `run_id` 的用户可见证据；因为这个前置 Gate 尚缺，唯一 30-run cohort 未启动，M2 状态保持 OPEN
+- Sentry 页面证据：已在用户打开的 Edge 中核对 issue `SYNCOPATE-2`；页面同时显示 probe 的完整 event ID `53781a9083f04fc3ae5f9d9e681c4ea8` 与 `run_id=run_sentry_m2_90524`。截图及结构化记录为 `artifacts/m2/sentry_issue_53781a90.jpg`、`sentry_issue_verified.json`；最终 Gate 会再次硬校验它们与 `sentry_probe.json` 身份一致
+- Gate 验收器加固：0.6B 模型可能直接回答而不调用工具，因此不再错误地固定检查 cohort 第一条 run；现在只在同一唯一 cohort 内寻找一条同时具备完整 Tempo span 和 Langfuse generation 的 run。最终 30-run cohort 尚未启动，M2 状态仍为 OPEN
 - Dashboard 实测修正：用户从 UI 短时间提交约 10 个请求后，PostgreSQL 显示端到端耗时从 2.316 秒升至 36.732 秒，原始累计 histogram 的 queue-lag P95 为 45.9375 秒、run execution P95 为 4.75 秒，但原面板 `rate(...[$__rate_interval])` 返回 `NaN`。根因是每个 RQ workhorse 只导出一个累计样本便退出，单样本序列无法计算 `rate()`。面板与 failed-rate 告警已改为聚合 Collector 保留的累计值，并明确其“当前 telemetry stack 生命周期”口径；零失败回退为 0%，模型错误计数与工具延迟拆分左右单位轴。重建 LGTM 后以 10 个带 `M2-DASHBOARD-REPAIR` 标记的并发 run 复验：10/10 terminal、run execution P95=4.75 秒、queue-lag P95=45.8333 秒、failed rate=0%、model 200=10，证明真实队列压力可被读取；这批仅是修复诊断，不代替最终 30-run cohort。
 
 ### [M2-SUBJECTIVE] 人工感受（Gate 完成后由用户填写，最多 5 行）

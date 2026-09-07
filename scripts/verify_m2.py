@@ -354,6 +354,62 @@ def query_langfuse(values: dict[str, str], run_id: str) -> dict[str, Any]:
     return {"ok": complete, "round_count": len(rounds), "rounds": rounds}
 
 
+def query_cohort_observability(
+    grafana_base: str,
+    values: dict[str, str],
+    runs: list[dict[str, Any]],
+    *,
+    attempts: int = 6,
+    delay_seconds: float = 5.0,
+) -> dict[str, Any]:
+    """Select one cohort run whose trace and generations are both complete."""
+    last_errors: list[str] = []
+    for attempt in range(attempts):
+        last_errors = []
+        for run in runs:
+            run_id = run["run_id"]
+            try:
+                tempo = query_tempo(grafana_base, run_id, attempts=1)
+            except AssertionError as error:
+                last_errors.append(f"{run_id}: {error}")
+                continue
+            langfuse = query_langfuse(values, run_id)
+            if langfuse.get("ok"):
+                return {
+                    "ok": True,
+                    "run_id": run_id,
+                    "tempo": tempo,
+                    "langfuse": langfuse,
+                }
+            last_errors.append(f"{run_id}: incomplete Langfuse generations")
+        if attempt + 1 < attempts:
+            time.sleep(delay_seconds)
+    detail = "; ".join(last_errors[:3])
+    raise AssertionError(f"no cohort run has complete Tempo and Langfuse evidence: {detail}")
+
+
+def validate_sentry_issue(
+    probe_path: Path,
+    issue_path: Path,
+    *,
+    lab_root: Path = LAB_ROOT,
+) -> dict[str, Any]:
+    probe = json.loads(probe_path.read_text(encoding="utf-8"))
+    issue = json.loads(issue_path.read_text(encoding="utf-8"))
+    if not probe.get("sent") or not issue.get("ok"):
+        raise AssertionError("Sentry probe and visible issue evidence must both be successful")
+    if issue.get("event_id") != probe.get("event_id") or issue.get("run_id") != probe.get("run_id"):
+        raise AssertionError("visible Sentry issue does not match the sent probe identity")
+    screenshot_value = issue.get("screenshot")
+    if not isinstance(screenshot_value, str) or not screenshot_value:
+        raise AssertionError("visible Sentry issue evidence must name a screenshot")
+    root = lab_root.resolve()
+    screenshot = (root / screenshot_value).resolve()
+    if root not in screenshot.parents or not screenshot.is_file() or screenshot.stat().st_size == 0:
+        raise AssertionError("visible Sentry issue screenshot is missing or outside the Lab")
+    return issue
+
+
 def _memory_to_mib(value: str) -> float:
     number, unit = value.strip().split() if " " in value.strip() else (value[:-3], value[-3:])
     factors = {"KiB": 1 / 1024, "MiB": 1, "GiB": 1024, "kB": 1 / 1000, "MB": 1, "GB": 1000}
@@ -415,13 +471,15 @@ def main() -> int:
         ended_at,
         expected_run_count=len(runs),
     )
-    tempo = query_tempo(args.grafana_base, runs[0]["run_id"])
-    langfuse = query_langfuse(values, runs[0]["run_id"])
+    observability = query_cohort_observability(args.grafana_base, values, runs)
+    tempo = observability["tempo"]
+    langfuse = observability["langfuse"]
     resources = docker_resources(args.env_file)
 
+    sentry_probe_path = LAB_ROOT / "artifacts" / "m2" / "sentry_probe.json"
     sentry_path = LAB_ROOT / "artifacts" / "m2" / "sentry_issue_verified.json"
     alert_path = LAB_ROOT / "artifacts" / "m2" / "alert_verified.json"
-    sentry = json.loads(sentry_path.read_text()) if sentry_path.exists() else {"ok": False, "reason": "missing issue screenshot verification"}
+    sentry = validate_sentry_issue(sentry_probe_path, sentry_path)
     alert = json.loads(alert_path.read_text()) if alert_path.exists() else {"ok": False, "reason": "missing alert verification"}
     gates = {
         "G1_trace_complete": bool(tempo["ok"]),
