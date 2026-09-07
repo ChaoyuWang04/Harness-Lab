@@ -31,3 +31,16 @@ def test_remote_verifier_never_renders_secret_values() -> None:
     assert "config --quiet" in script
     assert "config >" not in script
     assert "nvidia-smi" in script
+
+
+def test_m2_gate_runs_in_an_isolated_container_on_the_runtime_host() -> None:
+    script = (LAB_ROOT / "scripts" / "run_verify_m2_home5090.sh").read_text(encoding="utf-8")
+
+    assert "--network host" in script
+    assert "--user" in script
+    assert "--group-add" in script
+    assert "/var/run/docker.sock:/var/run/docker.sock" in script
+    assert "/usr/bin/docker:/usr/bin/docker:ro" in script
+    assert "docker-compose:/usr/libexec/docker/cli-plugins/docker-compose:ro" in script
+    assert '"${lab_root}:/workspace"' in script
+    assert "python scripts/verify_m2.py" in script

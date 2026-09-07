@@ -57,6 +57,20 @@ docker compose up -d
 - 切流前停止所有写者并确认没有 nonterminal run、pending outbox 或 Redis job。
 - 切流后回滚必须先停止 5090 写者并生成反向逻辑备份，不能让 Mac 与 5090 双写。
 
+## M2 Gate
+
+M2 的资源读数必须来自实际 Compose 主机，不能在 Mac 上运行 verifier。服务器不安装项目
+Python 环境；固定入口复用现有 app image，并只为 verifier 挂载源码、Docker socket 和只读
+Docker CLI：
+
+```bash
+./scripts/run_verify_m2_home5090.sh
+```
+
+该入口会在 host network 中访问只绑定 loopback 的 API/Grafana，并以当前用户身份写
+`artifacts/m2/gate_m2.json`。运行前必须完成 Sentry issue 页面证据并确认没有其他 run producer；
+它只允许创建计划中登记的唯一 30-run cohort。
+
 ## 重启与停止
 
 常驻服务使用 `restart: unless-stopped`。主机或 Docker 重启后运行
