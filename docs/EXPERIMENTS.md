@@ -106,3 +106,38 @@
 ### [M2-SUBJECTIVE] 人工感受（Gate 完成后由用户填写，最多 5 行）
 
 - 待填写：比较 M1 依赖 `docker logs`/psql 与 M2 通过面板和 trace 定位同一问题时的体验。
+
+## 运行面迁移 · 独立 Git + home-5090
+
+### [MIG-G1] Git 边界
+
+- 时间：2026-09-07 15:49–16:08 CST
+- 操作：确认父仓库未跟踪任何 Lab 文件；在 Lab 初始化独立 `main`，先提交 Mac 可回滚基线，再提交 5090 部署；父仓库以 index-only 单 hunk 暂存 Lab 忽略规则
+- 预期：独立仓库不含密钥、模型、数据库、日志、cache 或 artifacts；父仓库提交不夹带已有 `/sandbox-rl-MOPD-lab/` 用户改动
+- 实际：独立基线 `02d8d1a`、5090 部署 `0ce190f` 已推送到 `ChaoyuWang04/Harness-Lab`；父仓库只含 `/harness-lab/` 的 `2085f1b` 已推送；用户原改动保持未暂存
+- 结论：PASS
+
+### [MIG-G2] Docker、GPU 与模型
+
+- 时间：2026-09-07 16:14–16:36 CST
+- 操作：使用 Docker 与 NVIDIA 官方 apt repository 安装 Docker Engine/Compose/NVIDIA Container Toolkit；比较官方 Docker Hub 与加速源 OCI digest 后拉取 Ollama；启动 GPU Compose 服务
+- 预期：容器可见一张 RTX 5090；`qwen3:0.6b` 使用 Lab 自有模型目录；Ollama、PostgreSQL、Redis、LGTM 仅在 Compose 网络内，API/Grafana 只绑定服务器 loopback
+- 实际：Docker 29.8.0、Compose 5.5.1、NVIDIA Container Toolkit 1.20.0；Ollama 0.33.3 官方与加速源 index digest 均为 `sha256:32931b46719f673c05fdbaa81ccb26da18ea4a1c57590a754874ab28ba269eb2`；容器报告 RTX 5090 32,607 MiB，模型 522 MB；端口验收通过
+- 结论：PASS
+
+### [MIG-G3] PostgreSQL 一致性与切流
+
+- 时间：2026-09-07 16:22–16:42 CST
+- 操作：先在 Mac 临时空库、再在 5090 临时空库对 custom dump 做 `--exit-on-error --single-transaction` 完整恢复；确认 nonterminal/outbox/Redis queue 为 0 后停止 Mac 写者，生成最终 dump 并恢复到 5090 pristine 数据库
+- 预期：最终 dump 传输前后 SHA-256 相同；全部业务表计数、revision、campaign 值、约束数和三个序列值逐项一致；全程只有一个写端
+- 实际：最终 SHA-256 `a8e0b0bd0f402ef33736ec1e5385829d96d09a074bf83b7493d03cb60d74188f`；切流前 40 runs、404 events、nonterminal=0、pending outbox=0；七张业务表、`0001_m1_schema`、campaign 值、15 个约束及序列 354/356/16 全部相等；恢复后再启动 5090 API
+- 结论：PASS
+
+### [MIG-G4] 端到端、重启和卸载 Mac 运行面
+
+- 时间：2026-09-07 16:39–16:47 CST
+- 操作：运行两个带 migration 标记的真实 Agent smoke run；运行原 M0 直接工具调用采样；从 5090 验证 Sentry/Langfuse；重启八个常驻服务；经 SSH tunnel 从 Mac 请求 API/Grafana；最后关闭 Mac Compose 和本地 Ollama
+- 预期：run 进入终态、SSE 中文可解码；直接工具调用 ≥14/20；Sentry/Langfuse 均 2xx；重启后全栈恢复；Mac 本地无 Harness 容器和 11434 listener，隧道仍可访问 5090
+- 实际：两个 run 均 completed，SSE 正常中文；但 0.6B 在完整 Agent prompt 下两次都跳过工具，其中一条答案无依据，记质量 WARN。原注册直接工具请求 20/20 合法；Sentry 200、Langfuse 200；重启后八个常驻服务和 GPU/model 验收通过；Mac Harness 容器为 0、11434 无监听，隧道 API/Grafana 均成功
+- 结论：PASS（迁移/运行面）；模型工具选择 WARN 不等于修复，M2 仍保持 OPEN
+- 证据：`artifacts/migration/home5090-migration-summary.json`、`tool-calling-home5090-20.json`、`cloud-connectivity-home5090.json` 以及两份数据库 dump

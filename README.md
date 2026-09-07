@@ -16,7 +16,7 @@ Harness Lab 是一个与 Syncopate 主线实现和 Git 历史隔离的 Serving H
 
 ## 当前阶段
 
-M0 与 M1 已通过。M2 已获人工批准并进入施工：中文最终答案渲染、OpenTelemetry、Langfuse、Sentry、LGTM、四块 Grafana 面板、指标、追踪传播和真实告警正负对照均已接通。M2 仍未通过 Gate：Sentry 已成功写入指定 event，但还缺 issue 页面中该 event 与 `run_id` 的可见证据；因此唯一 30-run cohort 尚未启动。当前正在把运行面迁到 `home-5090`，迁移成功不等同于 M2 Gate 通过。
+M0 与 M1 已通过。运行面已迁到 `home-5090`，Mac Harness 容器与本地 Ollama 已停止；Mac 通过 `127.0.0.1:18000`（API/UI）和 `127.0.0.1:13300`（Grafana）的 SSH tunnel 访问。M2 已获人工批准并进入施工：中文最终答案渲染、OpenTelemetry、Langfuse、Sentry、LGTM、四块 Grafana 面板、指标、追踪传播和真实告警正负对照均已接通。M2 仍未通过 Gate：Sentry 已成功写入指定 event，但还缺 issue 页面中该 event 与 `run_id` 的可见证据；因此唯一 30-run cohort 尚未启动。迁移成功不等同于 M2 Gate 通过。
 
 服务器安装、启动、隧道、数据迁移和回滚见 `docs/REMOTE-OPERATIONS.md`。
 
