@@ -5,8 +5,8 @@ models, databases, queues, caches, logs, or artifacts from the former parent Syn
 
 Before making changes, read `README.md`, `docs/harness-lab-plan.md`, `docs/EXPERIMENTS.md`, and the
 relevant file under `docs/plans/`. The milestone order and gates in those documents are authoritative.
-M0 and M1 are complete. M2 is still in progress and must not be described as passed until its remaining
-Sentry UI evidence and registered cohort gate are complete.
+M0, M1, and M2 are complete. M3 has not started; do not write M3 implementation until its registered
+plan is re-read and the user explicitly approves that stage.
 
 All Lab-owned material must stay under this repository. Commit code, tests, configuration templates,
 scripts, and documentation. Never commit `secrets/.env`, models, databases, caches, logs, or raw

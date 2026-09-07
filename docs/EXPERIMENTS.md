@@ -102,12 +102,22 @@
 - 云端连接：Langfuse SDK `auth_check=True`；Sentry 受控 probe 已获得 event_id `53781a9083f04fc3ae5f9d9e681c4ea8`，关联 `run_id=run_sentry_m2_90524`，脱敏证据见 `artifacts/m2/sentry_probe.json`。这只证明 SDK 写入/认证，不替代 G3/G4 的页面和字段验收
 - 资源：迁移前 Mac 读数为启动 LGTM 前约 359.65 MiB、全栈约 1,552.54 MiB。迁移后 `home-5090` Docker memory 为 33,237,381,120 bytes；修复复验时八项服务齐全，合计约 1,255 MiB，低于 4 GiB 停止线；OOM=0、restart=0。最终值仍由唯一 30-run Gate 重测
 - Sentry 页面证据：已在用户打开的 Edge 中核对 issue `SYNCOPATE-2`；页面同时显示 probe 的完整 event ID `53781a9083f04fc3ae5f9d9e681c4ea8` 与 `run_id=run_sentry_m2_90524`。截图及结构化记录为 `artifacts/m2/sentry_issue_53781a90.jpg`、`sentry_issue_verified.json`；最终 Gate 会再次硬校验它们与 `sentry_probe.json` 身份一致
-- Gate 验收器加固：0.6B 模型可能直接回答而不调用工具，因此不再错误地固定检查 cohort 第一条 run；现在只在同一唯一 cohort 内寻找一条同时具备完整 Tempo span 和 Langfuse generation 的 run。最终 30-run cohort 尚未启动，M2 状态仍为 OPEN
+- Gate 验收器加固：0.6B 模型可能直接回答而不调用工具，因此不再错误地固定检查 cohort 第一条 run；现在只在同一唯一 cohort 内寻找一条同时具备完整 Tempo span 和 Langfuse generation 的 run
 - Dashboard 实测修正：用户从 UI 短时间提交约 10 个请求后，PostgreSQL 显示端到端耗时从 2.316 秒升至 36.732 秒，原始累计 histogram 的 queue-lag P95 为 45.9375 秒、run execution P95 为 4.75 秒，但原面板 `rate(...[$__rate_interval])` 返回 `NaN`。根因是每个 RQ workhorse 只导出一个累计样本便退出，单样本序列无法计算 `rate()`。面板与 failed-rate 告警已改为聚合 Collector 保留的累计值，并明确其“当前 telemetry stack 生命周期”口径；零失败回退为 0%，模型错误计数与工具延迟拆分左右单位轴。重建 LGTM 后以 10 个带 `M2-DASHBOARD-REPAIR` 标记的并发 run 复验：10/10 terminal、run execution P95=4.75 秒、queue-lag P95=45.8333 秒、failed rate=0%、model 200=10，证明真实队列压力可被读取；这批仅是修复诊断，不代替最终 30-run cohort。
 
-### [M2-SUBJECTIVE] 人工感受（Gate 完成后由用户填写，最多 5 行）
+### [M2-GATE] 唯一 30-run 正式验收
 
-- 待填写：比较 M1 依赖 `docker logs`/psql 与 M2 通过面板和 trace 定位同一问题时的体验。
+- 时间：2026-09-07 22:06–22:08 CST
+- 操作：在 `home-5090` 无其他 producer、queued/running/outbox 均为 0 的前提下，通过固定入口 `scripts/run_verify_m2_home5090.sh` 创建唯一一批 30 条真实 run；从该 cohort 的新增 workhorse metric instance、Tempo、Langfuse、已核对的 Sentry issue 和真实告警正负对照统一验收
+- 结果：30/30 completed、唯一 run 30、failed rate=0%；run execution P95=4.75 秒，queue lag P95=175 秒，model/tool 非空系列=3。单 worker 在突发 30 请求下的主要瓶颈是排队，不是单条执行时间；175 秒超过 10 秒 SLO 线，是被面板正确揭示的容量基线，不影响“指标可读”Gate 判据
+- Trace/Langfuse：run `run_1788790010265c7dc0eea66b142bb` 的单一 Tempo trace `ccb56b61a2413c53aec388dafd2554cf` 覆盖 API、dispatcher、worker、model 和 tool；Langfuse 同一 run 有 2 轮完整 generation，token 分别为 466/75/541 与 324/342/666
+- Sentry/告警：Sentry issue `SYNCOPATE-2` 的 event ID 与 run ID 和发送 probe 一致；queue-age 告警正对照进入 Firing，恢复 worker 后活动告警归零
+- 资源：实际运行主机 `samwang-X870I-AORUS-PRO-ICE` 的八项服务齐全；合计 RSS 2,139.458 MiB <4 GiB，OOM=0、unexpected restart=0
+- 结论：G1–G5 全部 PASS，`all_passed=true`；M2 COMPLETE。脱敏机器证据见 `artifacts/m2/gate_m2.json`
+
+### [M2-SUBJECTIVE] 人工感受（用户本轮实际反馈，≤5 行）
+
+- 用户在前端连续提交约 10 条请求时，肉眼看到返回明显变慢，却发现原 P95 面板没有变化；这直接暴露了监控虽已接线、查询口径却不正确。修正后同类压力和正式 30-run cohort 都能显示真实 queue lag，面板现在能区分“模型执行慢”和“排队慢”，比只看日志/数据库更快定位瓶颈。
 
 ## 运行面迁移 · 独立 Git + home-5090
 
@@ -141,5 +151,5 @@
 - 操作：运行两个带 migration 标记的真实 Agent smoke run；运行原 M0 直接工具调用采样；从 5090 验证 Sentry/Langfuse；重启八个常驻服务；经 SSH tunnel 从 Mac 请求 API/Grafana；最后关闭 Mac Compose 和本地 Ollama
 - 预期：run 进入终态、SSE 中文可解码；直接工具调用 ≥14/20；Sentry/Langfuse 均 2xx；重启后全栈恢复；Mac 本地无 Harness 容器和 11434 listener，隧道仍可访问 5090
 - 实际：两个 run 均 completed，SSE 正常中文；但 0.6B 在完整 Agent prompt 下两次都跳过工具，其中一条答案无依据，记质量 WARN。原注册直接工具请求 20/20 合法；Sentry 200、Langfuse 200；重启后八个常驻服务和 GPU/model 验收通过；Mac Harness 容器为 0、11434 无监听，隧道 API/Grafana 均成功
-- 结论：PASS（迁移/运行面）；模型工具选择 WARN 不等于修复，M2 仍保持 OPEN
+- 结论：PASS（迁移/运行面）；模型工具选择 WARN 不等于修复。该条是迁移当时的状态，当前 M2 最终结论以上方 `[M2-GATE]` 为准
 - 证据：`artifacts/migration/home5090-migration-summary.json`、`tool-calling-home5090-20.json`、`cloud-connectivity-home5090.json` 以及两份数据库 dump
