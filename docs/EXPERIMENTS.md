@@ -102,7 +102,7 @@
 - 云端连接：Langfuse SDK `auth_check=True`；Sentry 受控 probe 已获得 event_id `53781a9083f04fc3ae5f9d9e681c4ea8`，关联 `run_id=run_sentry_m2_90524`，脱敏证据见 `artifacts/m2/sentry_probe.json`。这只证明 SDK 写入/认证，不替代 G3/G4 的页面和字段验收
 - 资源：Docker allocation 仍为 8,318,976,000 bytes；启动 LGTM 前约 359.65 MiB，当前全栈约 1,552.54 MiB，均低于 4 GiB 停止线；OOM=0、意外 restart=0；Lab 总磁盘约 1.2 GiB，其中模型 498 MiB、持久数据 335 MiB、缓存 167 MiB、venv 178 MiB
 - 当前未验：Sentry issue 页面尚未形成指定 event_id + `run_id` 的用户可见证据；因为这个前置 Gate 尚缺，唯一 30-run cohort 未启动，M2 状态保持 OPEN
-- Dashboard 实测修正：用户从 UI 短时间提交约 10 个请求后，PostgreSQL 显示端到端耗时从 2.316 秒升至 36.732 秒，原始累计 histogram 的 queue-lag P95 为 45.9375 秒、run execution P95 为 4.75 秒，但原面板 `rate(...[$__rate_interval])` 返回 `NaN`。根因是每个 RQ workhorse 只导出一个累计样本便退出，单样本序列无法计算 `rate()`。面板已改为聚合 Collector 保留的累计 bucket，并明确其“当前 telemetry stack 生命周期”口径；零失败回退为 0%，模型错误计数与工具延迟拆分左右单位轴。该修正必须在 5090 实页与受控请求中复验后才算通过。
+- Dashboard 实测修正：用户从 UI 短时间提交约 10 个请求后，PostgreSQL 显示端到端耗时从 2.316 秒升至 36.732 秒，原始累计 histogram 的 queue-lag P95 为 45.9375 秒、run execution P95 为 4.75 秒，但原面板 `rate(...[$__rate_interval])` 返回 `NaN`。根因是每个 RQ workhorse 只导出一个累计样本便退出，单样本序列无法计算 `rate()`。面板与 failed-rate 告警已改为聚合 Collector 保留的累计值，并明确其“当前 telemetry stack 生命周期”口径；零失败回退为 0%，模型错误计数与工具延迟拆分左右单位轴。重建 LGTM 后以 10 个带 `M2-DASHBOARD-REPAIR` 标记的并发 run 复验：10/10 terminal、run execution P95=4.75 秒、queue-lag P95=45.8333 秒、failed rate=0%、model 200=10，证明真实队列压力可被读取；这批仅是修复诊断，不代替最终 30-run cohort。
 
 ### [M2-SUBJECTIVE] 人工感受（Gate 完成后由用户填写，最多 5 行）
 

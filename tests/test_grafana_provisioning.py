@@ -79,6 +79,13 @@ def test_alerts_have_exact_queue_expression_and_two_minute_pending_period() -> N
 
     assert "max(agent_oldest_queued_age_seconds) > 10" in rules
     assert "failed_rate > 0.05" in rules
+    failed_expression = next(
+        line.strip().removeprefix("expr: ")
+        for line in rules.splitlines()
+        if "agent_run_failed_total" in line
+    )
+    assert "rate(" not in failed_expression
+    assert "or vector(0)" in failed_expression
     assert rules.count("for: 2m") == 2
     assert "datasourceUid: prometheus" in rules
 

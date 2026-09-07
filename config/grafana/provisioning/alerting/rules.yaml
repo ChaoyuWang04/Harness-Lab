@@ -36,7 +36,7 @@ groups:
             model:
               refId: A
               editorMode: code
-              expr: (sum(rate(agent_run_failed_total[2m])) / clamp_min(sum(rate(agent_run_total[2m])), 0.000001)) > 0.05
+              expr: ((sum(agent_run_failed_total) or vector(0)) / clamp_min(sum(agent_run_total), 1)) > 0.05
               instant: true
               range: false
         for: 2m
