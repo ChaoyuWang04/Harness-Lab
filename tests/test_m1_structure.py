@@ -35,12 +35,21 @@ class M1StructureTests(unittest.TestCase):
         self.assertIn("./data/redis:/data", compose)
         self.assertNotRegex(compose, r"(?m)^volumes:\s*$")
         self.assertEqual(compose.count("env_file: ./secrets/.env"), 5)
-        self.assertIn("http://host.docker.internal:11434/v1", compose)
+        self.assertIn("${HARNESS_COMPOSE_LLM_BASE_URL:-http://ollama:11434/v1}", compose)
 
     def test_compose_declares_services_health_and_memory_limits(self) -> None:
         compose = (LAB_ROOT / "compose.yaml").read_text(encoding="utf-8")
 
-        for service in ("postgres", "redis", "migrate", "api", "dispatcher", "worker", "sweeper"):
+        for service in (
+            "ollama",
+            "postgres",
+            "redis",
+            "migrate",
+            "api",
+            "dispatcher",
+            "worker",
+            "sweeper",
+        ):
             self.assertRegex(compose, rf"(?m)^  {service}:$")
         for limit in ("768m", "256m", "512m", "1g"):
             self.assertIn(f"mem_limit: {limit}", compose)
@@ -52,6 +61,10 @@ class M1StructureTests(unittest.TestCase):
             "HARNESS_TEST_PAUSE_AFTER_TOOL_SECONDS: ${HARNESS_TEST_PAUSE_AFTER_TOOL_SECONDS:-0}",
             worker_block.group(1),
         )
+        for service in ("ollama", "postgres", "redis", "lgtm", "api", "dispatcher", "worker", "sweeper"):
+            block = re.search(rf"(?ms)^  {service}:\n(.*?)(?=^  \w|\Z)", compose)
+            self.assertIsNotNone(block)
+            self.assertIn("restart: unless-stopped", block.group(1))
 
     def test_dockerfile_uses_lab_project(self) -> None:
         dockerfile = (LAB_ROOT / "Dockerfile").read_text(encoding="utf-8")

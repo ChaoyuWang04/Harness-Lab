@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     test_database_url: str = "postgresql+psycopg://postgres:harness@127.0.0.1:5432/harness"
     redis_url: str = "redis://redis:6379/0"
     test_redis_url: str = "redis://127.0.0.1:6379/0"
-    llm_base_url: str = "http://host.docker.internal:11434/v1"
+    llm_base_url: str = "http://ollama:11434/v1"
     llm_model: str = "qwen3:0.6b"
     lease_seconds: int = Field(default=30, ge=5)
     max_attempts: int = Field(default=3, ge=1)

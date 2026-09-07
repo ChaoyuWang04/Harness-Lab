@@ -1,12 +1,31 @@
 name: harness-lab
 
 services:
+  ollama:
+    image: ollama/ollama:0.33.3
+    environment:
+      OLLAMA_HOST: 0.0.0.0:11434
+    volumes:
+      - ./models/ollama:/root/.ollama/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    mem_limit: 4g
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
   lgtm:
     image: grafana/otel-lgtm:0.32.1
     ports:
-      - "3300:3000"
-      - "4317:4317"
-      - "4318:4318"
+      - "127.0.0.1:3300:3000"
     volumes:
       - ./data/lgtm:/data
       - ./config/grafana/provisioning/datasources/datasources.yaml:/otel-lgtm/grafana/conf/provisioning/datasources/grafana-datasources.yaml:ro
@@ -14,6 +33,7 @@ services:
       - ./config/grafana/provisioning/alerting/rules.yaml:/otel-lgtm/grafana/conf/provisioning/alerting/harness-rules.yaml:ro
       - ./config/grafana/dashboards/harness-slo.json:/otel-lgtm/grafana/conf/provisioning/dashboards/custom/harness-slo.json:ro
     mem_limit: 2g
+    restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:3000/api/health >/dev/null"]
       interval: 5s
@@ -26,11 +46,10 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: harness
       POSTGRES_DB: harness
-    ports:
-      - "5432:5432"
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
     mem_limit: 768m
+    restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d harness"]
       interval: 3s
@@ -40,11 +59,10 @@ services:
   redis:
     image: redis:7
     command: redis-server --appendonly yes
-    ports:
-      - "6379:6379"
     volumes:
       - ./data/redis:/data
     mem_limit: 256m
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 3s
@@ -65,12 +83,13 @@ services:
     command: uvicorn app.api.main:app --host 0.0.0.0 --port 8000
     env_file: ./secrets/.env
     environment:
-      LLM_BASE_URL: http://host.docker.internal:11434/v1
+      LLM_BASE_URL: ${HARNESS_COMPOSE_LLM_BASE_URL:-http://ollama:11434/v1}
       HARNESS_OBSERVABILITY_ENABLED: "true"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     mem_limit: 512m
+    restart: unless-stopped
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -82,10 +101,11 @@ services:
     command: python -m app.dispatcher
     env_file: ./secrets/.env
     environment:
-      LLM_BASE_URL: http://host.docker.internal:11434/v1
+      LLM_BASE_URL: ${HARNESS_COMPOSE_LLM_BASE_URL:-http://ollama:11434/v1}
       HARNESS_OBSERVABILITY_ENABLED: "true"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
     mem_limit: 256m
+    restart: unless-stopped
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -97,7 +117,7 @@ services:
     command: python -m app.worker
     env_file: ./secrets/.env
     environment:
-      LLM_BASE_URL: http://host.docker.internal:11434/v1
+      LLM_BASE_URL: ${HARNESS_COMPOSE_LLM_BASE_URL:-http://ollama:11434/v1}
       HARNESS_TEST_PAUSE_AFTER_TOOL_SECONDS: ${HARNESS_TEST_PAUSE_AFTER_TOOL_SECONDS:-0}
       HARNESS_OBSERVABILITY_ENABLED: "true"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
@@ -114,10 +134,11 @@ services:
     command: python -m app.sweeper
     env_file: ./secrets/.env
     environment:
-      LLM_BASE_URL: http://host.docker.internal:11434/v1
+      LLM_BASE_URL: ${HARNESS_COMPOSE_LLM_BASE_URL:-http://ollama:11434/v1}
       HARNESS_OBSERVABILITY_ENABLED: "true"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
     mem_limit: 256m
+    restart: unless-stopped
     depends_on:
       migrate:
         condition: service_completed_successfully

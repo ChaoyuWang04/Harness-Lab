@@ -1,9 +1,11 @@
 # Harness Lab · 最小生产化 Serving 系统实施计划书
 
-> 目标：在一台 24GB 统一内存的 Mac 上，以 Qwen3-0.6B（ollama）为模型 provider，从零搭起一套**最小但真实**的 Agent 生产化 Harness：
+> 目标：以 Qwen3-0.6B（ollama）为模型 provider，从零搭起一套**最小但真实**的 Agent 生产化 Harness：
 > PostgreSQL 单一事实源 + Outbox + Redis 队列（API/Worker 分离）+ SSE 事件流 + 三层幂等 + lease/sweeper 崩溃恢复 + Sentry/Langfuse/Grafana 可观测 + 故障注入演练 + 数据回流闭环。
 >
 > 本文档供 coding agent 直接执行。**严格按里程碑顺序推进，每个里程碑末尾有验收门禁（Gate），全部指标通过并记录进 `EXPERIMENTS.md` 后才允许进入下一阶段。**
+>
+> 部署边界更新（2026-09-07）：常驻运行面已经从 Mac 改为 `home-5090` 的 Docker Compose + RTX 5090；Mac 只作为 SSH/Git 控制面。模型默认改为 Compose 内 Ollama，较大模型可切换 Modal。服务器具体操作以 `docs/REMOTE-OPERATIONS.md` 为准，本文旧的 Mac M0 命令只保留为历史 Gate 证据。
 
 ---
 
@@ -25,10 +27,10 @@
 | DB | PostgreSQL 16 + SQLAlchemy 2.0 + Alembic |
 | 队列 | Redis 7 + RQ（job id 复用 run_id 做去重） |
 | SSE | sse-starlette |
-| 模型 | ollama（宿主机原生）`qwen3:0.6b`，OpenAI 兼容端点 |
+| 模型 | ollama（Compose 内使用 RTX 5090）`qwen3:0.6b`，OpenAI 兼容端点；可切换 Modal |
 | 可观测 | OpenTelemetry SDK → `grafana/otel-lgtm` 单容器；Sentry Cloud；Langfuse Cloud |
 | 压测 | hey（brew 安装）+ 一个自写并发脚本 |
-| 编排 | Docker Compose；api/worker/dispatcher/sweeper 共用同一个 Image，不同启动命令 |
+| 编排 | `home-5090` Docker Compose；api/worker/dispatcher/sweeper 共用同一个 Image，不同启动命令 |
 
 ### 0.3 架构总图（心中常驻）
 
