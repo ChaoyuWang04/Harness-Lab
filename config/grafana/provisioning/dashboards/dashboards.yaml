@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: Harness Lab
+    orgId: 1
+    folder: Harness Lab
+    type: file
+    disableDeletion: true
+    updateIntervalSeconds: 10
+    options:
+      path: /otel-lgtm/grafana/conf/provisioning/dashboards/custom

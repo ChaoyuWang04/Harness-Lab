@@ -1,0 +1,10 @@
+.git
+.venv
+artifacts
+cache
+data
+logs
+models
+secrets
+__pycache__
+*.pyc

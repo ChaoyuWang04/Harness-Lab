@@ -1,0 +1,16 @@
+.DS_Store
+.venv/
+__pycache__/
+*.py[cod]
+
+secrets/.env
+models/**
+data/**
+logs/**
+cache/**
+artifacts/**
+
+!models/.gitkeep
+!logs/.gitkeep
+!cache/.gitkeep
+!artifacts/.gitkeep

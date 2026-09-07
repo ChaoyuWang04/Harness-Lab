@@ -1,0 +1,48 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: Harness SLO alerts
+    folder: Harness Lab
+    interval: 10s
+    rules:
+      - uid: harness-queue-lag
+        title: Harness queue lag
+        condition: A
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: {from: 180, to: 0}
+            model:
+              refId: A
+              editorMode: code
+              expr: max(agent_oldest_queued_age_seconds) > 10
+              instant: true
+              range: false
+        for: 2m
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: Oldest queued run is over 10 seconds old
+        labels:
+          service: harness-lab
+      - uid: harness-failed-rate
+        title: Harness failed rate
+        condition: A
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: {from: 180, to: 0}
+            model:
+              refId: A
+              editorMode: code
+              expr: (sum(rate(agent_run_failed_total[2m])) / clamp_min(sum(rate(agent_run_total[2m])), 0.000001)) > 0.05
+              instant: true
+              range: false
+        for: 2m
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: failed_rate > 0.05 for two minutes
+        labels:
+          service: harness-lab

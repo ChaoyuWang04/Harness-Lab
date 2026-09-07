@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Harness Lab</title>
+    <style>
+      body { font: 16px/1.5 system-ui, sans-serif; max-width: 900px; margin: 3rem auto; padding: 0 1rem; }
+      form { display: flex; gap: .5rem; }
+      input { flex: 1; padding: .7rem; }
+      button { padding: .7rem 1rem; }
+      #answer { min-height: 3rem; padding: 1rem; border: 1px solid #bbb; border-radius: .4rem; white-space: pre-wrap; }
+      pre { min-height: 18rem; padding: 1rem; background: #111; color: #d8ffd8; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+      small { color: #666; }
+    </style>
+  </head>
+  <body>
+    <h1>Harness Lab</h1>
+    <form id="run-form">
+      <input id="prompt" value="诊断 camp_001 今日消耗并汇报预算使用率" aria-label="诊断指令">
+      <button>创建 run</button>
+    </form>
+    <h2>模型回答</h2>
+    <div id="answer" aria-live="polite">等待任务完成…</div>
+    <p><small>Last-Event-ID: <span id="last-event-id">—</span></small></p>
+    <h2>运行事件</h2>
+    <pre id="events"></pre>
+    <script>
+      const form = document.querySelector('#run-form');
+      const output = document.querySelector('#events');
+      const answer = document.querySelector('#answer');
+      const lastId = document.querySelector('#last-event-id');
+      let source;
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        if (source) source.close();
+        output.textContent = '';
+        answer.textContent = '运行中…';
+        const response = await fetch('/runs', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({prompt: document.querySelector('#prompt').value}),
+        });
+        const run = await response.json();
+        source = new EventSource(`/runs/${run.run_id}/events`);
+        ['run.created', 'run.enqueued', 'run.started', 'step.model_call', 'step.tool_call', 'step.tool_result', 'run.completed', 'run.failed'].forEach((name) => {
+          source.addEventListener(name, (message) => {
+            lastId.textContent = message.lastEventId || '—';
+            output.textContent += `${message.lastEventId} ${name} ${message.data}\n`;
+            const payload = JSON.parse(message.data);
+            if (name === 'run.completed') answer.textContent = payload.answer || '任务已完成，但没有返回文字。';
+            if (name === 'run.failed') answer.textContent = `回答失败：${payload.error_code || 'UNKNOWN'}`;
+            if (name === 'run.completed' || name === 'run.failed') source.close();
+          });
+        });
+      });
+    </script>
+  </body>
+</html>

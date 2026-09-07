@@ -1,0 +1,38 @@
+[project]
+name = "harness-lab"
+version = "0.1.0"
+description = "Isolated serving harness reliability lab"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "alembic",
+  "fastapi",
+  "langfuse>=4.15.1",
+  "openai",
+  "opentelemetry-exporter-otlp-proto-grpc>=1.44.0",
+  "opentelemetry-instrumentation-fastapi>=0.65b0",
+  "opentelemetry-instrumentation-httpx>=0.65b0",
+  "opentelemetry-instrumentation-redis>=0.65b0",
+  "opentelemetry-instrumentation-requests>=0.65b0",
+  "opentelemetry-instrumentation-sqlalchemy>=0.65b0",
+  "opentelemetry-sdk>=1.44.0",
+  "psycopg[binary]",
+  "pydantic-settings",
+  "redis",
+  "rq",
+  "sentry-sdk[fastapi]<3",
+  "sqlalchemy",
+  "sse-starlette",
+  "uvicorn[standard]",
+]
+
+[dependency-groups]
+dev = [
+  "httpx",
+  "pytest",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

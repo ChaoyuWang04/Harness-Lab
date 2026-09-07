@@ -1,0 +1,123 @@
+name: harness-lab
+
+services:
+  lgtm:
+    image: grafana/otel-lgtm:0.32.1
+    ports:
+      - "3300:3000"
+      - "4317:4317"
+      - "4318:4318"
+    volumes:
+      - ./data/lgtm:/data
+      - ./config/grafana/provisioning/datasources/datasources.yaml:/otel-lgtm/grafana/conf/provisioning/datasources/grafana-datasources.yaml:ro
+      - ./config/grafana/provisioning/dashboards/dashboards.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/harness.yaml:ro
+      - ./config/grafana/provisioning/alerting/rules.yaml:/otel-lgtm/grafana/conf/provisioning/alerting/harness-rules.yaml:ro
+      - ./config/grafana/dashboards/harness-slo.json:/otel-lgtm/grafana/conf/provisioning/dashboards/custom/harness-slo.json:ro
+    mem_limit: 2g
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:3000/api/health >/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: harness
+      POSTGRES_DB: harness
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    mem_limit: 768m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d harness"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./data/redis:/data
+    mem_limit: 256m
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    build: .
+    command: alembic upgrade head
+    env_file: ./secrets/.env
+    mem_limit: 256m
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build: .
+    command: uvicorn app.api.main:app --host 0.0.0.0 --port 8000
+    env_file: ./secrets/.env
+    environment:
+      LLM_BASE_URL: http://host.docker.internal:11434/v1
+      HARNESS_OBSERVABILITY_ENABLED: "true"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
+    ports:
+      - "8000:8000"
+    mem_limit: 512m
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  dispatcher:
+    build: .
+    command: python -m app.dispatcher
+    env_file: ./secrets/.env
+    environment:
+      LLM_BASE_URL: http://host.docker.internal:11434/v1
+      HARNESS_OBSERVABILITY_ENABLED: "true"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
+    mem_limit: 256m
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  worker:
+    build: .
+    command: python -m app.worker
+    env_file: ./secrets/.env
+    environment:
+      LLM_BASE_URL: http://host.docker.internal:11434/v1
+      HARNESS_TEST_PAUSE_AFTER_TOOL_SECONDS: ${HARNESS_TEST_PAUSE_AFTER_TOOL_SECONDS:-0}
+      HARNESS_OBSERVABILITY_ENABLED: "true"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
+    mem_limit: 1g
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  sweeper:
+    build: .
+    command: python -m app.sweeper
+    env_file: ./secrets/.env
+    environment:
+      LLM_BASE_URL: http://host.docker.internal:11434/v1
+      HARNESS_OBSERVABILITY_ENABLED: "true"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
+    mem_limit: 256m
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
