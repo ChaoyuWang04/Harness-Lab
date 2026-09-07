@@ -248,6 +248,20 @@
 - 分析：连接复用假设成立，但当前压测仍比原计划的 `hey` 多执行逐请求唯一 Idempotency-Key：每条都额外获取 PostgreSQL advisory lock 并写幂等表；`hey -H` 只能整轮固定 header，原注入命令不会产生这种路径
 - 最后一项单因素诊断：仅 EXP-5/API probe 省略 Idempotency-Key，使请求路径与 `hey` 对齐；M1 幂等 Gate 及 M3 provider/SSE 批次继续使用唯一 key。用全新 `harness_m3_api4_probe4` 测相同 500×50、连接复用和 150 ms；若仍失败，停止微调并重新审查 API/数据库架构
 
+### [M3-API4-DIAG-4] 与 hey 请求语义对齐后的隔离诊断
+
+- 时间：2026-09-08 CST；专用数据库 `harness_m3_api4_probe4`，500×50、四 API 进程、每线程连接复用、无 Idempotency-Key
+- 实际：500/500 创建，POST P50=42.825 ms、P90=93.295 ms、P95=120.985 ms、P99=178.269 ms、max=198.520 ms，wall time=0.589 秒；P95 <150 ms，PASS
+- 资源与恢复：trap 后八项普通服务均 running/healthy；API RSS=556.4 MiB / 768 MiB，Lab 合计约 2153 MiB，低于 4 GiB 停止线
+- 结论：连接复用与移除压测器额外幂等事务后，固定 API-only 诊断通过；M1 的请求幂等机制未移除，只是 EXP-5 按原 `hey` 负载不携带该 header。可以进入新的全量 Gate，但诊断不代替 EXP-5 两个真实执行臂
+
+### [M3-GATE-8-PRE] API 容量修复后的完整复验
+
+- 时间：2026-09-08 CST；沿用用户要求按推荐方案完整完成 M3 的授权
+- 隔离：新 PostgreSQL 数据库 `harness_m3_gate8`、Redis DB 8 和 `artifacts/m3/gate8/`；Gate 1～7 与四次 API 诊断均不删除、不覆盖
+- 新接线：API 容器固定四个 Uvicorn worker、768 MiB limit；批量压测每 executor thread 复用 HTTP session。仅 EXP-5 的 500×50 两臂省略 Idempotency-Key，与原 `hey` 命令一致
+- 判据：EXP-5 仍要求两个臂 POST P95 各 <150 ms、四 worker queue-lag P95 至少下降 50%；其他 EXP-1～4/6、全局重复审计、比较表、资源 <4 GiB 与失败即停规则全部不变
+
 ## 运行面迁移 · 独立 Git + home-5090
 
 ### [MIG-G1] Git 边界
