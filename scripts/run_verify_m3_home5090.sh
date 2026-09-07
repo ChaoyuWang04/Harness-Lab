@@ -30,6 +30,12 @@ case "${gate_id}" in
     m3_redis_url="redis://redis:6379/4"
     m3_output="${lab_root}/artifacts/m3/gate4/gate_m3.json"
     ;;
+  gate5)
+    m3_database_name="harness_m3_gate5"
+    m3_test_database_name="harness_m3_gate5_test"
+    m3_redis_url="redis://redis:6379/5"
+    m3_output="${lab_root}/artifacts/m3/gate5/gate_m3.json"
+    ;;
   *)
     echo "Unsupported M3 gate id: ${gate_id}" >&2
     exit 2
@@ -50,6 +56,10 @@ trap restore_normal_runtime EXIT
 "${compose[@]}" build api dispatcher worker sweeper migrate chaos-proxy
 docker run --rm harness-lab-dispatcher python -c \
   "from app.chaos.hooks import crash_after_publish_once"
+docker run --rm \
+  -v "${lab_root}/data/chaos:/var/lib/harness-chaos" \
+  harness-lab-api \
+  python -c "from pathlib import Path; Path('/var/lib/harness-chaos/dispatcher-after-publish.once').unlink(missing_ok=True)"
 docker compose --env-file secrets/.env exec -T postgres sh -c \
   "psql -U postgres -d postgres -tAc \"SELECT 1 FROM pg_database WHERE datname='${m3_database_name}'\" | grep -q 1 || psql -U postgres -d postgres -c \"CREATE DATABASE ${m3_database_name}\""
 docker compose --env-file secrets/.env exec -T postgres sh -c \

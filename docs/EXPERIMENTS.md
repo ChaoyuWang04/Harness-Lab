@@ -174,6 +174,20 @@
 - 新回归：dispatcher 恢复后最多等待 10 秒收敛到 dispatched；此等待只消除采样竞态，不改变退出码 91、crash 后 pending、started/terminal 各一条等原判据
 - 其他判据、输入前置、镜像正对照、资源停止线和失败即停规则与 `[M3-PRE]` 完全一致
 
+### [M3-GATE-4] 跨 Gate marker 权限前置失败并停止
+
+- 时间：2026-09-08 CST
+- EXP-1：本轮独立 10/10 completed，最大恢复时间 44.429 秒，十次审计均恰好一条，PASS
+- EXP-2：注入前删除 one-shot marker 时触发 `PermissionError`，没有创建 EXP-2 run；Gate 3 marker 由 root dispatcher 容器以 mode 0600 创建，而非 root verifier 无权复位它。按停止线未执行 EXP-2～6
+- 修复：每个 Gate 在数据库和实验 run 创建前，由一次性 root 容器只挂载 `data/chaos/` 并精确删除 `dispatcher-after-publish.once`；不递归清理、不碰其他证据。Gate 4 数据和 `artifacts/m3/gate4/` 保留
+
+### [M3-GATE-5-PRE] 精确 marker 复位后的全量复验
+
+- 时间：2026-09-08 CST；沿用用户要求完整完成 M3 的授权
+- 隔离：新 PostgreSQL 数据库 `harness_m3_gate5`、Redis DB 5 和 `artifacts/m3/gate5/`；Gate 1～4 均不删除、不覆盖
+- 新正对照：全 Python 镜像构建与 hook import 后，精确复位单个 dispatcher marker，再执行 3/3 工具参数探针；所有动作都发生在首个实验 run 前
+- 判据与停止线：继续完全沿用 `[M3-PRE]`，不拼接前轮局部 PASS
+
 ## 运行面迁移 · 独立 Git + home-5090
 
 ### [MIG-G1] Git 边界

@@ -90,6 +90,14 @@ def test_m3_gate4_has_fresh_database_redis_and_evidence_namespaces() -> None:
     assert "artifacts/m3/gate4/gate_m3.json" in script
 
 
+def test_m3_gate5_has_fresh_database_redis_and_evidence_namespaces() -> None:
+    script = (LAB_ROOT / "scripts" / "run_verify_m3_home5090.sh").read_text(encoding="utf-8")
+
+    assert "harness_m3_gate5" in script
+    assert "redis://redis:6379/5" in script
+    assert "artifacts/m3/gate5/gate_m3.json" in script
+
+
 def test_m3_wrapper_rebuilds_every_python_service_before_injection() -> None:
     script = (LAB_ROOT / "scripts" / "run_verify_m3_home5090.sh").read_text(encoding="utf-8")
 
@@ -98,3 +106,13 @@ def test_m3_wrapper_rebuilds_every_python_service_before_injection() -> None:
         in script
     )
     assert "from app.chaos.hooks import crash_after_publish_once" in script
+
+
+def test_m3_wrapper_resets_only_the_exact_root_owned_dispatcher_marker() -> None:
+    script = (LAB_ROOT / "scripts" / "run_verify_m3_home5090.sh").read_text(encoding="utf-8")
+
+    assert '"${lab_root}/data/chaos:/var/lib/harness-chaos"' in script
+    assert (
+        "Path('/var/lib/harness-chaos/dispatcher-after-publish.once').unlink(missing_ok=True)"
+        in script
+    )
