@@ -213,6 +213,41 @@ def test_batch_creation_reuses_one_http_session_per_executor_thread(monkeypatch)
     assert all(session.trust_env is False for session in created_sessions)
 
 
+def test_load_batch_can_match_hey_without_idempotency_headers(monkeypatch) -> None:
+    verifier = load_verifier()
+    observed_keys = []
+
+    class FakeSession:
+        def __init__(self) -> None:
+            self.trust_env = True
+
+    monkeypatch.setattr(
+        verifier, "requests", types.SimpleNamespace(Session=FakeSession), raising=False
+    )
+    probe = object.__new__(verifier.M3Verifier)
+    probe.create_run = lambda _prompt, key, http_session=None: (
+        observed_keys.append(key) or f"run-{len(observed_keys)}",
+        1.0,
+    )
+
+    verifier.M3Verifier.create_batch(
+        probe,
+        count=20,
+        concurrency=4,
+        prompt="probe",
+        prefix="unused",
+        use_idempotency_keys=False,
+    )
+
+    assert observed_keys == [None] * 20
+
+
+def test_load_arm_and_api_probe_use_the_hey_request_path() -> None:
+    source = VERIFIER.read_text(encoding="utf-8")
+
+    assert source.count("use_idempotency_keys=False") >= 2
+
+
 def test_failed_api_capacity_probe_still_writes_numeric_evidence(tmp_path: Path) -> None:
     verifier = load_verifier()
     probe = object.__new__(verifier.M3Verifier)

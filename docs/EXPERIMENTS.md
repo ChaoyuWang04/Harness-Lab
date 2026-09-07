@@ -241,6 +241,13 @@
 - 分析：四进程已把平均吞吐提高到约 349 req/s，但尾延迟仍高。当前自写并发器为每个 POST 新建 urllib opener/HTTP 连接，不符合原计划 `hey` 的连接复用行为；先把这一差异作为单变量验证，不归因于 PostgreSQL
 - 下一诊断：批量创建的每个 executor thread 复用独立 `requests.Session` 且禁用宿主代理继承；四进程 API limit 调到 768 MiB 留出运行余量，但总实际 RSS 仍须 <4 GiB。用全新 `harness_m3_api4_probe3` 复测相同 500×50 和 150 ms 门槛
 
+### [M3-API4-DIAG-3] 连接复用后的隔离诊断
+
+- 时间：2026-09-08 CST；专用数据库 `harness_m3_api4_probe3`，固定 500×50 API-only 负载，每个 executor thread 复用 HTTP session
+- 实际：500/500 创建，wall time=0.796 秒，数据库创建跨度=0.738 秒，POST P95=157.861 ms；相比 DIAG-2 的 504.556 ms 大幅下降，但仍超过 150 ms，FAIL。API RSS=556.4 MiB / 768 MiB，资源余量正常
+- 分析：连接复用假设成立，但当前压测仍比原计划的 `hey` 多执行逐请求唯一 Idempotency-Key：每条都额外获取 PostgreSQL advisory lock 并写幂等表；`hey -H` 只能整轮固定 header，原注入命令不会产生这种路径
+- 最后一项单因素诊断：仅 EXP-5/API probe 省略 Idempotency-Key，使请求路径与 `hey` 对齐；M1 幂等 Gate 及 M3 provider/SSE 批次继续使用唯一 key。用全新 `harness_m3_api4_probe4` 测相同 500×50、连接复用和 150 ms；若仍失败，停止微调并重新审查 API/数据库架构
+
 ## 运行面迁移 · 独立 Git + home-5090
 
 ### [MIG-G1] Git 边界

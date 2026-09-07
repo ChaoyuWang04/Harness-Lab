@@ -426,21 +426,22 @@ class M3Verifier:
         return ids[0]
 
     def create_run(
-        self, prompt: str, key: str, http_session: requests.Session | None = None
+        self, prompt: str, key: str | None, http_session: requests.Session | None = None
     ) -> tuple[str, float]:
         started = time.perf_counter()
+        headers = {"Idempotency-Key": key} if key is not None else {}
         if http_session is None:
             payload = _json_request(
                 f"{self.api_base}/runs",
                 method="POST",
                 body={"prompt": prompt},
-                headers={"Idempotency-Key": key},
+                headers=headers,
             )
         else:
             response = http_session.post(
                 f"{self.api_base}/runs",
                 json={"prompt": prompt},
-                headers={"Idempotency-Key": key},
+                headers=headers,
                 timeout=30,
             )
             response.raise_for_status()
@@ -455,6 +456,7 @@ class M3Verifier:
         concurrency: int,
         prompt: str,
         prefix: str,
+        use_idempotency_keys: bool = True,
     ) -> tuple[list[str], list[float]]:
         thread_state = threading.local()
 
@@ -464,7 +466,8 @@ class M3Verifier:
                 session = requests.Session()
                 session.trust_env = False
                 thread_state.http_session = session
-            return self.create_run(prompt, f"{prefix}-{index}", http_session=session)
+            key = f"{prefix}-{index}" if use_idempotency_keys else None
+            return self.create_run(prompt, key, http_session=session)
 
         with ThreadPoolExecutor(max_workers=concurrency) as pool:
             results = list(pool.map(create, range(count)))
@@ -1002,6 +1005,7 @@ class M3Verifier:
             concurrency=EXPERIMENT_SIZES["load_concurrency"],
             prompt=f"[M3-{name}] 只回复 OK，不调用工具",
             prefix=f"m3-{name.lower()}-{time.time_ns()}",
+            use_idempotency_keys=False,
         )
         views, _ = self.wait_runs(run_ids, timeout_seconds=2400)
         records = self.run_records(run_ids)
@@ -1037,11 +1041,16 @@ class M3Verifier:
             concurrency=EXPERIMENT_SIZES["load_concurrency"],
             prompt="[M3-API-CAPACITY] 只回复 OK，不调用工具",
             prefix=f"m3-api-capacity-{time.time_ns()}",
+            use_idempotency_keys=False,
         )
         raw_result = {
             "created": len(run_ids),
             "concurrency": EXPERIMENT_SIZES["load_concurrency"],
             "post_p95_ms": round(_percentile(post_ms, 0.95), 3),
+            "post_p50_ms": round(_percentile(post_ms, 0.50), 3),
+            "post_p90_ms": round(_percentile(post_ms, 0.90), 3),
+            "post_p99_ms": round(_percentile(post_ms, 0.99), 3),
+            "post_max_ms": round(max(post_ms), 3),
             "creation_wall_seconds": round(time.monotonic() - started, 3),
             "run_ids_sha256": self._run_id_digest(run_ids),
         }

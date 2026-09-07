@@ -4,9 +4,9 @@ set -euo pipefail
 lab_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${lab_root}"
 
-probe_database="harness_m3_api4_probe3"
+probe_database="harness_m3_api4_probe4"
 probe_database_url="postgresql+psycopg://postgres:harness@postgres:5432/${probe_database}"
-probe_output="${lab_root}/artifacts/m3/diagnostics/api4_capacity_probe3.json"
+probe_output="${lab_root}/artifacts/m3/diagnostics/api4_capacity_probe4.json"
 compose=(docker compose --env-file secrets/.env)
 
 restore_normal_api() {
