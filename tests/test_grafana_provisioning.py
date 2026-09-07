@@ -34,6 +34,35 @@ def test_dashboard_has_four_slo_panels_with_thresholds_and_stable_datasource() -
         assert metric in expressions
 
 
+def test_dashboard_queries_support_one_sample_rq_workhorses() -> None:
+    dashboard = json.loads((GRAFANA / "dashboards" / "harness-slo.json").read_text(encoding="utf-8"))
+    panels = {panel["title"]: panel for panel in dashboard["panels"]}
+
+    duration_query = panels["Run P95 duration"]["targets"][0]["expr"]
+    queue_query = panels["Queue lag P95"]["targets"][0]["expr"]
+    failed_query = panels["Run failed rate"]["targets"][0]["expr"]
+
+    # Every RQ workhorse exports one cumulative histogram sample before exit.
+    # rate() cannot calculate from those one-sample series; aggregate the
+    # collector-retained cumulative buckets instead.
+    assert "rate(" not in duration_query
+    assert "rate(" not in queue_query
+    assert "sum by (le) (agent_run_duration_seconds_bucket)" in duration_query
+    assert "sum by (le) (agent_queue_lag_seconds_bucket)" in queue_query
+    assert "or vector(0)" in failed_query
+
+
+def test_model_errors_and_tool_latency_use_separate_axes() -> None:
+    dashboard = json.loads((GRAFANA / "dashboards" / "harness-slo.json").read_text(encoding="utf-8"))
+    panel = next(panel for panel in dashboard["panels"] if panel["title"] == "Model errors and tool latency")
+
+    assert panel["fieldConfig"]["overrides"]
+    axis_units = json.dumps(panel["fieldConfig"]["overrides"])
+    assert "short" in axis_units
+    assert "ms" in axis_units
+    assert "axisPlacement" in axis_units
+
+
 def test_datasources_and_dashboard_provider_use_lgtm_stable_uids() -> None:
     datasources = (GRAFANA / "provisioning" / "datasources" / "datasources.yaml").read_text()
     provider = (GRAFANA / "provisioning" / "dashboards" / "dashboards.yaml").read_text()
