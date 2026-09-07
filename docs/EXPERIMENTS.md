@@ -145,6 +145,14 @@
 - 判据：EXP-1～6 的样本数、故障比例、时限、延迟、成功率、资源停止线和最终全局 Gate 与 `[M3-PRE]` 完全相同，不因 Gate 1 失败调整
 - 停止：前置探针或任一注册实验失败即保留 Gate 2 证据并恢复普通运行面，不继续后续实验，也不覆盖 Gate 1
 
+### [M3-GATE-2] EXP-1 通过，EXP-2 镜像接线失败并停止
+
+- 时间：2026-09-08 CST。首次启动在任何工具探针和实验 run 前发现 verifier 仍硬编码 Redis DB 1；修正为只允许非零隔离 DB 后，`harness_m3_gate2` 仍为 0 run，再进入实际 Gate 2
+- EXP-1：3/3 工具参数前置通过；真实 worker crash 10/10 completed，全部由 attempt 2 接管，最大恢复时间 44.255 秒；十次 `budget_audit` 均恰好一条。结论 PASS
+- EXP-2：run 最终 completed，started/terminal 各一条且 outbox 最终 dispatched，但 `dispatcher_exit_code=null`、未观察到 crash 后 pending 窗口，结论 FAIL；按停止线未执行 EXP-3～6
+- 根因：M3 wrapper 只构建了 `api` 和 `chaos-proxy` 镜像。Compose 为 `dispatcher`、`worker`、`sweeper`、`migrate` 使用各自镜像名，因此 dispatcher 仍是 M2 旧镜像，新 crash hook 没有进入真实被测进程
+- 修复：wrapper 改为构建全部 Python 服务镜像，并在创建数据库/run 前从 `harness-lab-dispatcher` 镜像导入 `crash_after_publish_once` 作为接线正对照。Gate 2 数据和 `artifacts/m3/gate2/` 保留；新的全量 Gate 必须继续使用新 namespace
+
 ## 运行面迁移 · 独立 Git + home-5090
 
 ### [MIG-G1] Git 边界

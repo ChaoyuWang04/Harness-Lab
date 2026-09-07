@@ -35,7 +35,9 @@ restore_normal_runtime() {
 }
 trap restore_normal_runtime EXIT
 
-"${compose[@]}" build api chaos-proxy
+"${compose[@]}" build api dispatcher worker sweeper migrate chaos-proxy
+docker run --rm harness-lab-dispatcher python -c \
+  "from app.chaos.hooks import crash_after_publish_once"
 docker compose --env-file secrets/.env exec -T postgres sh -c \
   "psql -U postgres -d postgres -tAc \"SELECT 1 FROM pg_database WHERE datname='${m3_database_name}'\" | grep -q 1 || psql -U postgres -d postgres -c \"CREATE DATABASE ${m3_database_name}\""
 docker compose --env-file secrets/.env exec -T postgres sh -c \
