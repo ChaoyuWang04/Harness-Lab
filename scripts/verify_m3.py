@@ -173,6 +173,16 @@ def validate_load_arms(one: dict[str, Any], four: dict[str, Any]) -> dict[str, A
     }
 
 
+def validate_api_capacity(result: dict[str, Any]) -> dict[str, Any]:
+    if int(result.get("created", 0)) != EXPERIMENT_SIZES["load_arm_runs"]:
+        raise AssertionError("API capacity probe did not create exactly 500 runs")
+    if int(result.get("concurrency", 0)) != EXPERIMENT_SIZES["load_concurrency"]:
+        raise AssertionError("API capacity probe did not use concurrency 50")
+    if float(result.get("post_p95_ms", math.inf)) >= 150:
+        raise AssertionError("API capacity probe POST P95 exceeded 150 ms")
+    return {"ok": True, **result}
+
+
 def validate_provider_degradation(
     rate_limited: dict[str, Any], timed_out: dict[str, Any], recovered: bool
 ) -> bool:
@@ -999,6 +1009,26 @@ class M3Verifier:
         self.save_experiment("EXP-5", evidence)
         return evidence
 
+    def api_capacity_probe(self) -> dict[str, Any]:
+        started = time.monotonic()
+        run_ids, post_ms = self.create_batch(
+            count=EXPERIMENT_SIZES["load_arm_runs"],
+            concurrency=EXPERIMENT_SIZES["load_concurrency"],
+            prompt="[M3-API-CAPACITY] 只回复 OK，不调用工具",
+            prefix=f"m3-api-capacity-{time.time_ns()}",
+        )
+        result = validate_api_capacity(
+            {
+                "created": len(run_ids),
+                "concurrency": EXPERIMENT_SIZES["load_concurrency"],
+                "post_p95_ms": round(_percentile(post_ms, 0.95), 3),
+                "creation_wall_seconds": round(time.monotonic() - started, 3),
+                "run_ids_sha256": self._run_id_digest(run_ids),
+            }
+        )
+        write_redacted_evidence(self.output, result, self.secret_values)
+        return result
+
     def _read_sse(self, run_id: str, last_event_id: int, max_events: int | None) -> list[int]:
         headers = {"Accept": "text/event-stream"}
         if last_event_id:
@@ -1151,6 +1181,7 @@ def main() -> int:
     parser.add_argument("--redis-url", default="redis://redis:6379/1")
     parser.add_argument("--env-file", type=Path, default=DEFAULT_ENV)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument("--api-capacity-only", action="store_true")
     args = parser.parse_args()
     values = parse_dotenv(args.env_file)
     secrets = [
@@ -1170,7 +1201,7 @@ def main() -> int:
         secret_values=secrets,
     )
     try:
-        evidence = verifier.run()
+        evidence = verifier.api_capacity_probe() if args.api_capacity_only else verifier.run()
     except Exception as error:
         write_redacted_evidence(
             args.output.parent / "failure.json",
@@ -1186,7 +1217,10 @@ def main() -> int:
         raise
     finally:
         verifier.close()
-    print(json.dumps({"all_passed": evidence["all_passed"], "gates": evidence["gates"]}))
+    if args.api_capacity_only:
+        print(json.dumps(evidence))
+    else:
+        print(json.dumps({"all_passed": evidence["all_passed"], "gates": evidence["gates"]}))
     return 0
 
 

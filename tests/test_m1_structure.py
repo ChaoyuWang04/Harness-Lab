@@ -66,6 +66,16 @@ class M1StructureTests(unittest.TestCase):
             self.assertIsNotNone(block)
             self.assertIn("restart: unless-stopped", block.group(1))
 
+    def test_api_uses_four_uvicorn_workers_for_concurrent_creation(self) -> None:
+        compose = (LAB_ROOT / "compose.yaml").read_text(encoding="utf-8")
+        api_block = re.search(r"(?ms)^  api:\n(.*?)(?=^  \w|\Z)", compose)
+
+        self.assertIsNotNone(api_block)
+        self.assertIn(
+            "uvicorn app.api.main:app --host 0.0.0.0 --port 8000 --workers 4",
+            api_block.group(1),
+        )
+
     def test_dockerfile_uses_lab_project(self) -> None:
         dockerfile = (LAB_ROOT / "Dockerfile").read_text(encoding="utf-8")
 

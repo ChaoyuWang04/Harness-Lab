@@ -132,3 +132,15 @@ def test_m3_wrapper_resets_only_the_exact_root_owned_dispatcher_marker() -> None
         "Path('/var/lib/harness-chaos/dispatcher-after-publish.once').unlink(missing_ok=True)"
         in script
     )
+
+
+def test_api_capacity_probe_is_isolated_and_restores_normal_api() -> None:
+    script = (LAB_ROOT / "scripts" / "run_verify_api_capacity_home5090.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "harness_m3_api4_probe" in script
+    assert "artifacts/m3/diagnostics/api4_capacity.json" in script
+    assert "trap restore_normal_api EXIT" in script
+    assert "--api-capacity-only" in script
+    assert "--redis-url redis://redis:6379/15" in script

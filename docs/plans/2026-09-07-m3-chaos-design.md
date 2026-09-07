@@ -27,6 +27,8 @@ The ordinary stack is restored in an unconditional shell trap: one worker, Redis
 
 Every experiment has a unique run prefix, exact start/end timestamps, run IDs or a content SHA, numeric outcomes, and `ok`. Gate M3 passes only if all six are true, the global `budget_audit` duplicate query in `harness_m3` is empty, and the required normal/429/load-one/load-four 3x4 baseline table is complete. No threshold is relaxed after execution.
 
+The API container runs four Uvicorn worker processes because run creation is stateless outside PostgreSQL and the 50-concurrent EXP-5 gate targets the API independently from execution workers. Before another costly full Gate after an API-capacity failure, `scripts/run_verify_api_capacity_home5090.sh` runs the same 500-by-50 POST workload against a fresh API-only database with no dispatcher consumer; it must independently satisfy the unchanged 150 ms P95 threshold and preserve the 4 GiB Lab resource stop line.
+
 Stop and restore immediately if Lab RSS reaches 4 GiB, any non-injected OOM occurs, an unrelated container would be targeted, the normal `harness` database receives an M3-tagged run, or the wrapper cannot prove which Compose service/container it is controlling.
 
 ## Post-Gate demo controls

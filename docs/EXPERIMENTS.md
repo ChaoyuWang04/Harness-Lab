@@ -220,6 +220,14 @@
 - EXP-4 判据：429 与 timeout 两臂各自仍须完成所有原机制判据；两臂中至少一个使现有 queue alert 真实 Firing，恢复后必须 Resolved。该修正移除的是验收器未注册的额外 AND，不改变 Grafana 的 `>10s for 2m` 规则
 - EXP-1～3、5～6 和全局 Gate 的样本数、时限、资源停止线、正对照、失败即停规则继续沿用 `[M3-PRE]`
 
+### [M3-GATE-7] EXP-5 API 创建容量不足并停止
+
+- 时间：2026-09-08 CST。EXP-1～3 全部通过；EXP-4 正常臂 30/30，429 与 timeout 臂均 29/30 completed、各仅一个预期错误码，timeout 告警 Firing、恢复后 Resolved，整体 PASS
+- EXP-5 单 worker 臂 500/500 completed、0 failed，POST P95=359.674 ms、queue-lag P95=1448.182 秒、吞吐 19.696 run/min；四 worker 臂 500/500 completed、0 failed，POST P95=541.326 ms、queue-lag P95=376.065 秒、吞吐 75.888 run/min
+- 结论：worker 1→4 将 queue lag 降低约 74.0%，执行吞吐提高约 3.85 倍，相关门槛通过；但两个臂的 POST P95 均超过 150 ms，EXP-5 FAIL 并停止，EXP-6 未执行
+- 根因证据：两个 500-run 创建批次的数据库创建时间跨度分别为 2.503 秒和 3.073 秒；当前单 Uvicorn API 进程约 160～200 req/s，50 并发在入口形成数百毫秒排队。失败不是模型执行或 worker 扩容无效
+- 处理：API 状态只在 PostgreSQL，入口可安全多进程化；将同一 API 容器改为四个 Uvicorn worker。先用专用空数据库跑固定 500×50 API-only 诊断并检查 150 ms 与 4 GiB 停止线；诊断未通过则不启动新的全量 Gate
+
 ## 运行面迁移 · 独立 Git + home-5090
 
 ### [MIG-G1] Git 边界

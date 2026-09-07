@@ -171,6 +171,18 @@ def test_load_gate_requires_post_latency_and_fifty_percent_queue_improvement() -
         verifier.validate_load_arms(one, {**four, "queue_lag_p95_seconds": 60})
 
 
+def test_api_capacity_probe_keeps_500_by_50_and_150ms_gate() -> None:
+    verifier = load_verifier()
+
+    assert verifier.validate_api_capacity(
+        {"created": 500, "concurrency": 50, "post_p95_ms": 149.9}
+    )["ok"] is True
+    with pytest.raises(AssertionError, match="150"):
+        verifier.validate_api_capacity(
+            {"created": 500, "concurrency": 50, "post_p95_ms": 150.0}
+        )
+
+
 def test_provider_gate_requires_alert_in_at_least_one_degraded_arm() -> None:
     verifier = load_verifier()
     rate_limited = {
