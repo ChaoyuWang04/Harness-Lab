@@ -22,6 +22,29 @@ services:
       timeout: 3s
       retries: 30
 
+  chaos-proxy:
+    profiles: ["m3"]
+    build: .
+    command: uvicorn app.chaos.proxy:app --host 0.0.0.0 --port 9000
+    environment:
+      CHAOS_UPSTREAM_URL: http://ollama:11434
+      CHAOS_SEED: ${CHAOS_SEED:-0}
+      CHAOS_429_RATE: ${CHAOS_429_RATE:-0}
+      CHAOS_TIMEOUT_RATE: ${CHAOS_TIMEOUT_RATE:-0}
+      CHAOS_5XX_RATE: ${CHAOS_5XX_RATE:-0}
+      CHAOS_LATENCY_MS: ${CHAOS_LATENCY_MS:-0}
+      CHAOS_TIMEOUT_SECONDS: ${CHAOS_TIMEOUT_SECONDS:-31}
+    mem_limit: 256m
+    restart: unless-stopped
+    depends_on:
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9000/health', timeout=2)"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
   lgtm:
     image: grafana/otel-lgtm:0.32.1
     ports:
@@ -73,6 +96,8 @@ services:
     build: .
     command: alembic upgrade head
     env_file: ./secrets/.env
+    environment:
+      DATABASE_URL: ${HARNESS_COMPOSE_DATABASE_URL:-postgresql+psycopg://postgres:harness@postgres:5432/harness}
     mem_limit: 256m
     depends_on:
       postgres:
@@ -83,6 +108,8 @@ services:
     command: uvicorn app.api.main:app --host 0.0.0.0 --port 8000
     env_file: ./secrets/.env
     environment:
+      DATABASE_URL: ${HARNESS_COMPOSE_DATABASE_URL:-postgresql+psycopg://postgres:harness@postgres:5432/harness}
+      REDIS_URL: ${HARNESS_COMPOSE_REDIS_URL:-redis://redis:6379/0}
       LLM_BASE_URL: ${HARNESS_COMPOSE_LLM_BASE_URL:-http://ollama:11434/v1}
       HARNESS_OBSERVABILITY_ENABLED: "true"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
@@ -101,6 +128,8 @@ services:
     command: python -m app.dispatcher
     env_file: ./secrets/.env
     environment:
+      DATABASE_URL: ${HARNESS_COMPOSE_DATABASE_URL:-postgresql+psycopg://postgres:harness@postgres:5432/harness}
+      REDIS_URL: ${HARNESS_COMPOSE_REDIS_URL:-redis://redis:6379/0}
       LLM_BASE_URL: ${HARNESS_COMPOSE_LLM_BASE_URL:-http://ollama:11434/v1}
       HARNESS_OBSERVABILITY_ENABLED: "true"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
@@ -117,6 +146,8 @@ services:
     command: python -m app.worker
     env_file: ./secrets/.env
     environment:
+      DATABASE_URL: ${HARNESS_COMPOSE_DATABASE_URL:-postgresql+psycopg://postgres:harness@postgres:5432/harness}
+      REDIS_URL: ${HARNESS_COMPOSE_REDIS_URL:-redis://redis:6379/0}
       LLM_BASE_URL: ${HARNESS_COMPOSE_LLM_BASE_URL:-http://ollama:11434/v1}
       HARNESS_TEST_PAUSE_AFTER_TOOL_SECONDS: ${HARNESS_TEST_PAUSE_AFTER_TOOL_SECONDS:-0}
       HARNESS_OBSERVABILITY_ENABLED: "true"
@@ -134,6 +165,8 @@ services:
     command: python -m app.sweeper
     env_file: ./secrets/.env
     environment:
+      DATABASE_URL: ${HARNESS_COMPOSE_DATABASE_URL:-postgresql+psycopg://postgres:harness@postgres:5432/harness}
+      REDIS_URL: ${HARNESS_COMPOSE_REDIS_URL:-redis://redis:6379/0}
       LLM_BASE_URL: ${HARNESS_COMPOSE_LLM_BASE_URL:-http://ollama:11434/v1}
       HARNESS_OBSERVABILITY_ENABLED: "true"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
