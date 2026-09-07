@@ -49,6 +49,18 @@ def test_summarize_run_timings_uses_event_timestamps() -> None:
     assert result["failed_rate"] == 0.5
 
 
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    (("132.4MiB / 256MiB", 132.4), ("1.5 GiB / 4 GiB", 1536.0), ("512kB / 1GB", 0.512)),
+)
+def test_parse_docker_memory_supports_compact_and_spaced_units(
+    raw: str, expected: float
+) -> None:
+    verifier = load_verifier()
+
+    assert verifier.parse_memory_to_mib(raw) == pytest.approx(expected)
+
+
 def test_worker_crash_gate_requires_ten_injections_and_no_duplicate_audits() -> None:
     verifier = load_verifier()
     trials = [

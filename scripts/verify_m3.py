@@ -9,6 +9,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import subprocess
 import sys
 import time
@@ -53,6 +54,24 @@ def _percentile(values: list[float], quantile: float) -> float:
     if lower == upper:
         return ordered[lower]
     return ordered[lower] + (ordered[upper] - ordered[lower]) * (position - lower)
+
+
+def parse_memory_to_mib(raw: str) -> float:
+    value = raw.split("/", 1)[0].strip()
+    match = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)\s*([kKMGT]i?B)", value)
+    if match is None:
+        raise ValueError(f"unsupported Docker memory value: {raw!r}")
+    number, unit = match.groups()
+    return float(number) * {
+        "KiB": 1 / 1024,
+        "MiB": 1,
+        "GiB": 1024,
+        "TiB": 1024 * 1024,
+        "kB": 1 / 1000,
+        "MB": 1,
+        "GB": 1000,
+        "TB": 1000 * 1000,
+    }[unit]
 
 
 def summarize_run_timings(runs: list[dict[str, Any]]) -> dict[str, Any]:
@@ -489,19 +508,7 @@ class M3Verifier:
             if line and json.loads(line).get("Name", "").startswith("harness-lab-")
         ]
 
-        def to_mib(raw: str) -> float:
-            value = raw.split("/")[0].strip()
-            number, unit = value.split()
-            return float(number) * {
-                "KiB": 1 / 1024,
-                "MiB": 1,
-                "GiB": 1024,
-                "kB": 1 / 1000,
-                "MB": 1,
-                "GB": 1000,
-            }[unit]
-
-        rss = round(sum(to_mib(row["MemUsage"]) for row in rows), 3)
+        rss = round(sum(parse_memory_to_mib(row["MemUsage"]) for row in rows), 3)
         container_ids = self._compose(["ps", "-q"]).stdout.split()
         oom = 0
         for container_id in container_ids:
