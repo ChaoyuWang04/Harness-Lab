@@ -44,3 +44,19 @@ def test_m2_gate_runs_in_an_isolated_container_on_the_runtime_host() -> None:
     assert "docker-compose:/usr/libexec/docker/cli-plugins/docker-compose:ro" in script
     assert '"${lab_root}:/workspace"' in script
     assert "python scripts/verify_m2.py" in script
+
+
+def test_m3_gate_uses_isolated_database_and_always_restores_normal_runtime() -> None:
+    script = (LAB_ROOT / "scripts" / "run_verify_m3_home5090.sh").read_text(encoding="utf-8")
+
+    assert "harness_m3" in script
+    assert "harness_m3_test" in script
+    assert "redis://redis:6379/1" in script
+    assert "trap restore_normal_runtime EXIT" in script
+    assert "up -d redis" in script
+    assert "--profile m3" in script
+    assert "harness-lab_default" in script
+    assert "/var/run/docker.sock:/var/run/docker.sock" in script
+    assert "python tests/test_outbox.py" in script
+    assert "python scripts/verify_m3.py" in script
+    assert "--scale worker=1" in script
