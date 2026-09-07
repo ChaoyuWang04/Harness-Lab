@@ -129,6 +129,14 @@
 - 注入口：Chaos Proxy 使用固定 seed 的确定性计数序列；dispatcher 使用落盘 one-shot marker；worker/Redis 只按 Compose 解析出的精确容器身份操作。每个实验后局部恢复，整个 Gate 结束或异常时由 wrapper trap 恢复普通单 worker、直接 Ollama、正常数据库
 - 判据与实现计划：`docs/plans/2026-09-07-m3-chaos-design.md`、`docs/plans/2026-09-07-m3-chaos-plan.md`。实际结果只从 `artifacts/m3/` 回填
 
+### [M3-GATE-1] EXP-1 前置契约失败并停止
+
+- 时间：2026-09-08 00:31–00:34 CST
+- 操作：进入 EXP-1，依次提交 15 个真实 `adjust_budget(+1)` 候选；只有工具事务已提交后才允许 kill worker。此前两次启动分别在基础镜像解析和首个实验 run 前的 Compose 宿主路径检查停止，`harness_m3` 均为 0 run，不计实验测量
+- 实际：15/15 都选择了 `adjust_budget`，但全部以 `TOOL_ERROR` 结束，`budget_audit=0`，因此实际 worker kill 注入为 0/10，按预注册判据立即停止，EXP-2～6 未执行。相同模型和合成输入的只读探针返回 `{"campaign_id":"001","delta":1}`，确认 0.6B 模型删掉了 `camp_` 前缀；M3 脚本没有复用 M0 已验证的完整精确标识符约束句
+- 结论：FAIL / STOP。它证明本轮输入契约不满足注入前置条件，不构成 worker 恢复机制失败。失败数据库和 `artifacts/m3/exp_1.json`、`failure.json` 保留；普通单 worker、Redis、dispatcher、sweeper 和正常 `harness` 数据库已由 trap 恢复
+- 修复：M3 所有工具臂已改为明确要求 `campaign_id` 是精确字符串 `camp_001` 且不得省略前缀；阈值、样本数和故障方式不变。若执行新的正式 Gate，必须使用新的隔离数据库/Redis namespace 和独立证据目录，不能覆盖本轮失败
+
 ## 运行面迁移 · 独立 Git + home-5090
 
 ### [MIG-G1] Git 边界

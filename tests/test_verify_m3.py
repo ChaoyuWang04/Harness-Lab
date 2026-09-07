@@ -34,6 +34,17 @@ def test_registered_experiment_sizes_are_fixed() -> None:
     }
 
 
+def test_m3_tool_arms_reuse_the_verified_exact_campaign_instruction() -> None:
+    verifier = load_verifier()
+    source = VERIFIER.read_text(encoding="utf-8")
+
+    assert verifier.EXACT_CAMPAIGN_INSTRUCTION == (
+        "调用工具时必须原样保留标识符，campaign_id 必须是精确字符串 camp_001，"
+        "不得省略 camp_ 前缀。"
+    )
+    assert source.count("EXACT_CAMPAIGN_INSTRUCTION") >= 3
+
+
 def test_summarize_run_timings_uses_event_timestamps() -> None:
     verifier = load_verifier()
     origin = datetime(2026, 9, 7, tzinfo=timezone.utc)

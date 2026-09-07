@@ -33,6 +33,10 @@ from app.models import AgentRun, BudgetAudit, OutboxJob, RunEvent, ToolCall  # n
 DEFAULT_OUTPUT = LAB_ROOT / "artifacts" / "m3" / "gate_m3.json"
 DEFAULT_ENV = LAB_ROOT / "secrets" / ".env"
 TERMINAL = {"completed", "failed", "cancelled"}
+EXACT_CAMPAIGN_INSTRUCTION = (
+    "调用工具时必须原样保留标识符，campaign_id 必须是精确字符串 camp_001，"
+    "不得省略 camp_ 前缀。"
+)
 EXPERIMENT_SIZES = {
     "worker_crashes": 10,
     "redis_outage_runs": 60,
@@ -575,7 +579,8 @@ class M3Verifier:
             candidates += 1
             worker_ids = self.scale_workers(1, pause_after_tool=120)
             run_id, _ = self.create_run(
-                f"[M3-EXP1-{candidates}] 将 camp_001 的预算增加 1；必须调用 adjust_budget，完成后汇报新预算",
+                f"[M3-EXP1-{candidates}] 将 camp_001 的预算增加 1；必须调用 adjust_budget，"
+                f"完成后汇报新预算。{EXACT_CAMPAIGN_INSTRUCTION}",
                 f"m3-exp1-{candidates}-{time.time_ns()}",
             )
             if not self._wait_for_committed_tool(run_id):
@@ -775,7 +780,7 @@ class M3Verifier:
         self.scale_workers(1)
         prompt = (
             f"[M3-{name}] 诊断 camp_001 今日消耗并汇报预算使用率；"
-            "必须先调用 get_report，campaign_id 必须原样保留"
+            f"必须先调用 get_report。{EXACT_CAMPAIGN_INSTRUCTION}"
         )
         run_ids, post_ms = self.create_batch(
             count=EXPERIMENT_SIZES["provider_arm_runs"],
