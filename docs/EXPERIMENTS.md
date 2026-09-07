@@ -234,6 +234,13 @@
 - 结果：诊断按 150 ms 门槛返回 FAIL，因此没有启动 Gate 8；但失败路径先抛断言、后写证据，精确 P95 未落盘，只保留数据库和 `artifacts/m3/diagnostics/failure.json`
 - 处理：不猜测数值、不复用数据库。先修正诊断器，使 PASS/FAIL 都先落 `created`、concurrency、POST P95、创建 wall time 和 run-ID digest，再用 `harness_m3_api4_probe2` 独立复测
 
+### [M3-API4-DIAG-2] 四 API 进程的数值化隔离诊断
+
+- 时间：2026-09-08 CST；专用数据库 `harness_m3_api4_probe2`，固定 500×50 API-only 负载
+- 实际：500/500 创建，wall time=1.433 秒，但 POST P95=504.556 ms，FAIL；四个 Uvicorn 子进程均真实存在。API 容器 RSS=510.5 MiB，已贴近 512 MiB limit；全 Lab 同时约 2.1 GiB，仍低于 4 GiB 停止线
+- 分析：四进程已把平均吞吐提高到约 349 req/s，但尾延迟仍高。当前自写并发器为每个 POST 新建 urllib opener/HTTP 连接，不符合原计划 `hey` 的连接复用行为；先把这一差异作为单变量验证，不归因于 PostgreSQL
+- 下一诊断：批量创建的每个 executor thread 复用独立 `requests.Session` 且禁用宿主代理继承；四进程 API limit 调到 768 MiB 留出运行余量，但总实际 RSS 仍须 <4 GiB。用全新 `harness_m3_api4_probe3` 复测相同 500×50 和 150 ms 门槛
+
 ## 运行面迁移 · 独立 Git + home-5090
 
 ### [MIG-G1] Git 边界

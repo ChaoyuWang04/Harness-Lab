@@ -139,8 +139,8 @@ def test_api_capacity_probe_is_isolated_and_restores_normal_api() -> None:
         encoding="utf-8"
     )
 
-    assert "harness_m3_api4_probe2" in script
-    assert "artifacts/m3/diagnostics/api4_capacity_probe2.json" in script
+    assert "harness_m3_api4_probe3" in script
+    assert "artifacts/m3/diagnostics/api4_capacity_probe3.json" in script
     assert "trap restore_normal_api EXIT" in script
     assert "--api-capacity-only" in script
     assert "--redis-url redis://redis:6379/15" in script

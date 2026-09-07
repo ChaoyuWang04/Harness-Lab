@@ -115,7 +115,7 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
     ports:
       - "127.0.0.1:8000:8000"
-    mem_limit: 512m
+    mem_limit: 768m
     restart: unless-stopped
     depends_on:
       migrate:

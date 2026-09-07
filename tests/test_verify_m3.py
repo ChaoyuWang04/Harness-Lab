@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import types
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -181,6 +182,35 @@ def test_api_capacity_probe_keeps_500_by_50_and_150ms_gate() -> None:
         verifier.validate_api_capacity(
             {"created": 500, "concurrency": 50, "post_p95_ms": 150.0}
         )
+
+
+def test_batch_creation_reuses_one_http_session_per_executor_thread(monkeypatch) -> None:
+    verifier = load_verifier()
+    created_sessions = []
+    observed_sessions = []
+
+    class FakeSession:
+        def __init__(self) -> None:
+            self.trust_env = True
+            created_sessions.append(self)
+
+    monkeypatch.setattr(
+        verifier, "requests", types.SimpleNamespace(Session=FakeSession), raising=False
+    )
+    probe = object.__new__(verifier.M3Verifier)
+    probe.create_run = lambda _prompt, key, http_session=None: (
+        observed_sessions.append(http_session) or key,
+        1.0,
+    )
+
+    verifier.M3Verifier.create_batch(
+        probe, count=100, concurrency=4, prompt="probe", prefix="capacity"
+    )
+
+    assert observed_sessions
+    assert all(session is not None for session in observed_sessions)
+    assert 1 <= len(created_sessions) <= 4
+    assert all(session.trust_env is False for session in created_sessions)
 
 
 def test_failed_api_capacity_probe_still_writes_numeric_evidence(tmp_path: Path) -> None:

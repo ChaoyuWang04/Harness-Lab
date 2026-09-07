@@ -51,7 +51,7 @@ class M1StructureTests(unittest.TestCase):
             "sweeper",
         ):
             self.assertRegex(compose, rf"(?m)^  {service}:$")
-        for limit in ("768m", "256m", "512m", "1g"):
+        for limit in ("768m", "256m", "1g"):
             self.assertIn(f"mem_limit: {limit}", compose)
         self.assertGreaterEqual(compose.count("healthcheck:"), 2)
         worker_block = re.search(r"(?ms)^  worker:\n(.*?)(?=^  \w|\Z)", compose)
@@ -75,6 +75,7 @@ class M1StructureTests(unittest.TestCase):
             "uvicorn app.api.main:app --host 0.0.0.0 --port 8000 --workers 4",
             api_block.group(1),
         )
+        self.assertIn("mem_limit: 768m", api_block.group(1))
 
     def test_dockerfile_uses_lab_project(self) -> None:
         dockerfile = (LAB_ROOT / "Dockerfile").read_text(encoding="utf-8")

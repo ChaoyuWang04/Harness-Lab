@@ -12,6 +12,7 @@ import os
 import re
 import subprocess
 import sys
+import threading
 import time
 import urllib.parse
 import urllib.request
@@ -21,6 +22,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import requests
 from redis import Redis
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session, sessionmaker
@@ -423,14 +425,26 @@ class M3Verifier:
             raise AssertionError(f"expected one dispatcher container, got {ids}")
         return ids[0]
 
-    def create_run(self, prompt: str, key: str) -> tuple[str, float]:
+    def create_run(
+        self, prompt: str, key: str, http_session: requests.Session | None = None
+    ) -> tuple[str, float]:
         started = time.perf_counter()
-        payload = _json_request(
-            f"{self.api_base}/runs",
-            method="POST",
-            body={"prompt": prompt},
-            headers={"Idempotency-Key": key},
-        )
+        if http_session is None:
+            payload = _json_request(
+                f"{self.api_base}/runs",
+                method="POST",
+                body={"prompt": prompt},
+                headers={"Idempotency-Key": key},
+            )
+        else:
+            response = http_session.post(
+                f"{self.api_base}/runs",
+                json={"prompt": prompt},
+                headers={"Idempotency-Key": key},
+                timeout=30,
+            )
+            response.raise_for_status()
+            payload = response.json()
         elapsed_ms = (time.perf_counter() - started) * 1000
         return str(payload["run_id"]), elapsed_ms
 
@@ -442,8 +456,15 @@ class M3Verifier:
         prompt: str,
         prefix: str,
     ) -> tuple[list[str], list[float]]:
+        thread_state = threading.local()
+
         def create(index: int) -> tuple[str, float]:
-            return self.create_run(prompt, f"{prefix}-{index}")
+            session = getattr(thread_state, "http_session", None)
+            if session is None:
+                session = requests.Session()
+                session.trust_env = False
+                thread_state.http_session = session
+            return self.create_run(prompt, f"{prefix}-{index}", http_session=session)
 
         with ThreadPoolExecutor(max_workers=concurrency) as pool:
             results = list(pool.map(create, range(count)))
