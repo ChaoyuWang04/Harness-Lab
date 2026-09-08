@@ -24,7 +24,7 @@ from app.eval.export import export_trajectories
 from app.eval.redact import normalize_trajectories
 from app.eval.replay import run_live_replay, score_dataset
 from app.models import AgentRun, BudgetAudit, Campaign, ModelTurnRecord, OutboxJob, RunEvent, ToolCall
-from app.telemetry import normalize_langfuse_base_url
+from app.telemetry import normalize_langfuse_base_url, normalize_langfuse_credential
 from scripts.export_traces import extract_database_fixtures
 from scripts.run_m4_cohort import CohortError, run_cohort, validate_gate_id
 
@@ -397,8 +397,8 @@ def verify_langfuse_parity(
 
     http_client = httpx.Client(timeout=30, trust_env=False)
     client = Langfuse(
-        public_key=os.environ["LANGFUSE_PUBLIC_KEY"],
-        secret_key=os.environ["LANGFUSE_SECRET_KEY"],
+        public_key=normalize_langfuse_credential(os.environ["LANGFUSE_PUBLIC_KEY"]),
+        secret_key=normalize_langfuse_credential(os.environ["LANGFUSE_SECRET_KEY"]),
         base_url=normalize_langfuse_base_url(os.environ["LANGFUSE_BASE_URL"]),
         tracing_enabled=False,
         httpx_client=http_client,

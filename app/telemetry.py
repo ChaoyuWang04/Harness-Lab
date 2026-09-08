@@ -43,9 +43,7 @@ LANGFUSE_CLOUD_HOSTS = frozenset(
 
 
 def normalize_langfuse_base_url(value: str) -> str:
-    candidate = value.strip()
-    if len(candidate) >= 2 and candidate[0] == candidate[-1] and candidate[0] in {'"', "'"}:
-        candidate = candidate[1:-1].strip()
+    candidate = _strip_matching_quotes(value)
     candidate = candidate.rstrip("/")
     if candidate in LANGFUSE_CLOUD_HOSTS:
         candidate = f"https://{candidate}"
@@ -53,6 +51,20 @@ def normalize_langfuse_base_url(value: str) -> str:
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         raise ValueError("LANGFUSE_BASE_URL must be a valid HTTP(S) URL")
     return candidate
+
+
+def _strip_matching_quotes(value: str) -> str:
+    candidate = value.strip()
+    if len(candidate) >= 2 and candidate[0] == candidate[-1] and candidate[0] in {'"', "'"}:
+        candidate = candidate[1:-1].strip()
+    return candidate
+
+
+def normalize_langfuse_credential(value: str) -> str:
+    credential = _strip_matching_quotes(value)
+    if not credential:
+        raise ValueError("Langfuse credential must not be empty")
+    return credential
 
 
 def _bounded(value: str, allowed: frozenset[str], label: str) -> str:
@@ -379,8 +391,8 @@ def initialize_observability(
             from langfuse import Langfuse
 
             langfuse = Langfuse(
-                public_key=langfuse_public_key,
-                secret_key=langfuse_secret_key,
+                public_key=normalize_langfuse_credential(langfuse_public_key),
+                secret_key=normalize_langfuse_credential(langfuse_secret_key),
                 base_url=normalize_langfuse_base_url(
                     os.getenv("LANGFUSE_BASE_URL", "https://cloud.langfuse.com")
                 ),

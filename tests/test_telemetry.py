@@ -67,7 +67,7 @@ def test_metric_labels_are_bounded() -> None:
 
 
 def test_langfuse_base_url_normalizes_only_known_cloud_regions() -> None:
-    from app.telemetry import normalize_langfuse_base_url
+    from app.telemetry import normalize_langfuse_base_url, normalize_langfuse_credential
 
     assert normalize_langfuse_base_url("cloud.langfuse.com") == "https://cloud.langfuse.com"
     assert (
@@ -80,6 +80,10 @@ def test_langfuse_base_url_normalizes_only_known_cloud_regions() -> None:
     )
     with pytest.raises(ValueError, match="HTTP"):
         normalize_langfuse_base_url("unregistered.internal")
+    assert normalize_langfuse_credential('"pk-test"') == "pk-test"
+    assert normalize_langfuse_credential("'sk-test'") == "sk-test"
+    with pytest.raises(ValueError, match="credential"):
+        normalize_langfuse_credential('""')
 
 
 def test_sentry_scrubber_removes_request_secrets_but_keeps_run_id() -> None:
