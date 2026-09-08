@@ -74,6 +74,10 @@ def test_langfuse_base_url_normalizes_only_known_cloud_regions() -> None:
         normalize_langfuse_base_url("https://us.cloud.langfuse.com/")
         == "https://us.cloud.langfuse.com"
     )
+    assert (
+        normalize_langfuse_base_url('"https://us.cloud.langfuse.com"')
+        == "https://us.cloud.langfuse.com"
+    )
     with pytest.raises(ValueError, match="HTTP"):
         normalize_langfuse_base_url("unregistered.internal")
 

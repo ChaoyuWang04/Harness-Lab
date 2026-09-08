@@ -794,6 +794,7 @@ def _start_m4_runtime(
             "HARNESS_COMPOSE_REDIS_URL": redis_url,
             "HARNESS_COMPOSE_LLM_BASE_URL": "http://chaos-proxy:9000/v1",
             "HARNESS_API_WORKERS": "1",
+            "HARNESS_OTEL_EXPORT_ENABLED": "false",
             "HARNESS_M4_EVAL_MODE": "true",
             "HARNESS_M4_CONTROL_TOKEN": args.control_token,
             "CAPTURE_MODEL_TURNS": "true",

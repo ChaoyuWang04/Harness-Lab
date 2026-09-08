@@ -352,3 +352,4 @@ def test_m4_runtime_uses_one_api_process(monkeypatch: pytest.MonkeyPatch, tmp_pa
     )
 
     assert captured["HARNESS_API_WORKERS"] == "1"
+    assert captured["HARNESS_OTEL_EXPORT_ENABLED"] == "false"

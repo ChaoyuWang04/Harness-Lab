@@ -43,7 +43,10 @@ LANGFUSE_CLOUD_HOSTS = frozenset(
 
 
 def normalize_langfuse_base_url(value: str) -> str:
-    candidate = value.strip().rstrip("/")
+    candidate = value.strip()
+    if len(candidate) >= 2 and candidate[0] == candidate[-1] and candidate[0] in {'"', "'"}:
+        candidate = candidate[1:-1].strip()
+    candidate = candidate.rstrip("/")
     if candidate in LANGFUSE_CLOUD_HOSTS:
         candidate = f"https://{candidate}"
     parsed = urllib.parse.urlsplit(candidate)
