@@ -198,10 +198,11 @@ def test_compose_registers_private_m4_proxy_and_capture_defaults() -> None:
     assert "HARNESS_M4_CONTROL_TOKEN=" in env_example
 
 
-def test_ollama_context_is_fixed_for_the_four_gibibyte_lab_budget() -> None:
+def test_ollama_capacity_is_fixed_for_the_four_gibibyte_lab_budget() -> None:
     compose = (LAB_ROOT / "compose.yaml").read_text(encoding="utf-8")
 
-    assert "OLLAMA_CONTEXT_LENGTH: 4096" in compose
+    assert "OLLAMA_CONTEXT_LENGTH: 2048" in compose
+    assert "OLLAMA_NUM_PARALLEL: 1" in compose
 
 
 def test_m4_wrapper_is_isolated_resumable_and_always_restores_normal_runtime() -> None:

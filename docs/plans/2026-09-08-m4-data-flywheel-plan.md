@@ -57,7 +57,7 @@ Out of scope:
 7. Classification, redaction, dataset building, and offline scoring are pure deterministic functions. `SOURCE_DATE_EPOCH` freezes manifest time for byte-identical rebuild checks.
 8. Tasks 1-11 implement and test the machinery without a real human pause. The real Gate in Task 12 pauses once after creating the 15-item review sheet; the assistant cannot self-approve it. The user supplies the 15 decisions, then the verifier checks at least 14/15 overall and all 15 critical boundaries.
 9. Two live replays use separate databases/Redis namespaces and disjoint execution IDs. They are reported as baseline stability. Different model text/tool choices/verdicts are WARN data, not pipeline failure, provided both runs used identical registered inputs, fixtures, schedules, assertions, and hashes.
-10. M4 services retain the project-wide `<4 GiB` total RSS stop line. A watchdog samples the exact Lab containers throughout the Gate; no memory limit is increased to make the Gate pass. Ollama context is explicitly fixed at 4096 tokens for this bounded short-command workload so its memory allocation does not drift with host VRAM heuristics.
+10. M4 services retain the project-wide `<4 GiB` total RSS stop line. A watchdog samples the exact Lab containers throughout the Gate; no memory limit is increased to make the Gate pass. Ollama context is explicitly fixed at 2048 tokens with one parallel request for this bounded short-command workload so its memory allocation does not drift with host VRAM heuristics or parallel KV-cache reservation.
 
 ## Artifact contract
 
