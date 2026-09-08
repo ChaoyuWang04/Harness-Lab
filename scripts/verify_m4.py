@@ -507,6 +507,10 @@ def select_requeue_positive_control_case(catalog: EvalCatalog) -> EvalCase:
     return case
 
 
+def is_requeue_ready(run: AgentRun | None, *, requeue_event_count: int) -> bool:
+    return run is not None and run.status == "queued" and requeue_event_count == 1
+
+
 def run_requeue_positive_control(
     runtime: LiveCohortRuntime,
     *,
@@ -552,7 +556,18 @@ def run_requeue_positive_control(
     while time.monotonic() < deadline:
         with runtime.sessions() as session:
             run = session.get(AgentRun, run_id)
-            if run is not None and run.attempt >= 2 and run.status == "queued":
+            requeue_event_count = int(
+                session.scalar(
+                    select(func.count())
+                    .select_from(RunEvent)
+                    .where(
+                        RunEvent.run_id == run_id,
+                        RunEvent.type == "run.requeued_by_sweeper",
+                    )
+                )
+                or 0
+            )
+            if is_requeue_ready(run, requeue_event_count=requeue_event_count):
                 break
         time.sleep(0.5)
     else:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -353,6 +354,18 @@ def test_requeue_positive_control_uses_fixed_successful_write_case() -> None:
         {"operator": "terminal", "expected": True},
         {"operator": "audit_delta", "expected": 50.0},
     ]
+
+
+def test_requeue_is_ready_before_the_next_worker_increments_attempt() -> None:
+    from scripts.verify_m4 import is_requeue_ready
+
+    queued_generation_one = SimpleNamespace(status="queued", attempt=1)
+
+    assert is_requeue_ready(queued_generation_one, requeue_event_count=1)
+    assert not is_requeue_ready(queued_generation_one, requeue_event_count=0)
+    assert not is_requeue_ready(
+        SimpleNamespace(status="running", attempt=2), requeue_event_count=1
+    )
 
 
 def test_m4_runtime_uses_one_api_process(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
