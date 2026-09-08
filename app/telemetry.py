@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import urllib.parse
 from collections.abc import Iterator
@@ -23,6 +24,9 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
 from app.config import settings
+
+
+logger = logging.getLogger(__name__)
 
 
 RUN_STATUSES = frozenset({"queued", "running", "completed", "failed", "cancelled"})
@@ -329,7 +333,7 @@ def _instrument_clients(engine: Any | None) -> None:
 
 
 def _init_sentry() -> None:
-    dsn = os.getenv("SENTRY_DSN", "")
+    dsn = _strip_matching_quotes(os.getenv("SENTRY_DSN", ""))
     if not dsn:
         return
     import sentry_sdk
@@ -404,7 +408,8 @@ def initialize_observability(
         runtime = ObservabilityRuntime(True, tracer_provider, meter_provider, langfuse)
         _runtimes[key] = runtime
         return runtime
-    except Exception:
+    except Exception as error:
+        logger.warning("observability initialization failed: %s", type(error).__name__)
         for component in (langfuse, meter_provider, tracer_provider):
             if component is None:
                 continue

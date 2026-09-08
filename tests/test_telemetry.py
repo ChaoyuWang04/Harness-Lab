@@ -99,6 +99,20 @@ def test_get_langfuse_client_returns_the_initialized_runtime_client() -> None:
         telemetry._runtimes.pop(key, None)
 
 
+def test_sentry_init_strips_matching_env_quotes(monkeypatch: pytest.MonkeyPatch) -> None:
+    import sentry_sdk
+
+    from app import telemetry
+
+    captured: dict[str, str] = {}
+    monkeypatch.setenv("SENTRY_DSN", '"https://public@example.com/1"')
+    monkeypatch.setattr(sentry_sdk, "init", lambda **kwargs: captured.update(kwargs))
+
+    telemetry._init_sentry()
+
+    assert captured["dsn"] == "https://public@example.com/1"
+
+
 def test_sentry_scrubber_removes_request_secrets_but_keeps_run_id() -> None:
     from app.telemetry import scrub_sentry_event
 
