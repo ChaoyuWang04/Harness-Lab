@@ -141,11 +141,17 @@ def _dataset_item(
         schedule_sha = sha256_bytes(canonical_json({"schedule_id": "none", "decisions": []}))
     else:
         schedule_sha = catalog.fault_schedules[case.fault_schedule_id].sha256
+    assertions = [assertion.model_dump(mode="json") for assertion in case.expected_behavior.assertions]
+    operators = {assertion["operator"] for assertion in assertions}
+    if "sse_sequence_continuous" not in operators:
+        assertions.append({"operator": "sse_sequence_continuous", "expected": True})
+    if "expected_post_state" not in operators:
+        assertions.append({"operator": "expected_post_state", "expected": expected_post_state})
     return {
         "id": f"m4-{case.case_id}",
         "input": input_text,
         "expected_behavior": f"{case.scenario_kind}:{item['attribution']['behavior_label']}",
-        "assertions": [assertion.model_dump(mode="json") for assertion in case.expected_behavior.assertions],
+        "assertions": assertions,
         "slice": slice_name,
         "source_run_id": item["run_id"],
         "source_case_id": case.case_id,
@@ -171,6 +177,12 @@ def build_dataset(
     metadata: dict[str, Any],
 ) -> dict[str, Any]:
     review_result = validate_human_review(normalized, sample, review)
+    if any(
+        item["scenario_kind"] == "environment"
+        and item["attribution"]["dataset_eligibility"] == "behavior_negative"
+        for item in normalized
+    ):
+        raise ValueError("environment behavior-negative trajectories are not dataset eligible")
     eligible = [
         item
         for item in normalized

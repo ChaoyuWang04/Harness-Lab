@@ -42,7 +42,28 @@
     "schema_version": {"const": "dataset_v1"},
     "world_fixture_id": {"type": "string"},
     "pre_state_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-    "expected_post_state": {"type": "object"},
+    "expected_post_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["campaigns"],
+      "properties": {
+        "campaigns": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "name", "budget", "spend_today", "status"],
+            "properties": {
+              "id": {"type": "string"},
+              "name": {"type": "string"},
+              "budget": {"type": "number"},
+              "spend_today": {"type": "number"},
+              "status": {"type": "string"}
+            }
+          }
+        }
+      }
+    },
     "fault_schedule_id": {"type": "string"},
     "fault_schedule_version": {"type": "string"},
     "fault_schedule_sha256": {"type": "string", "pattern": "^([0-9a-f]{64}|none)$"}

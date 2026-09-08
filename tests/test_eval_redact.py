@@ -99,18 +99,21 @@ def test_normalized_output_validates_against_trajectory_schema() -> None:
     Draft202012Validator(schema).validate(normalized)
 
 
-def test_missing_required_evidence_and_lineage_conflict_are_quarantined() -> None:
+def test_missing_required_evidence_lineage_conflict_and_invalid_schema_are_quarantined() -> None:
     missing = _raw("run-1", "camp_001")
     missing.pop("model_turns")
     conflict = deepcopy(_raw("run-2", "camp_002"))
     conflict["lineage_conflict"] = True
+    invalid = deepcopy(_raw("run-3", "camp_003"))
+    invalid["scenario_kind"] = "unknown"
 
-    result = normalize_trajectories([missing, conflict])
+    result = normalize_trajectories([missing, conflict, invalid])
 
     assert result["normalized"] == []
     assert [item["reason_code"] for item in result["quarantine"]] == [
         "MISSING_REQUIRED_EVIDENCE",
         "LINEAGE_CONFLICT",
+        "INVALID_NORMALIZED_SCHEMA",
     ]
 
 

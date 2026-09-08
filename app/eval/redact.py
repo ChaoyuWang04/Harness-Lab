@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import json
 import re
 from copy import deepcopy
+from pathlib import Path
 from typing import Any
+
+from jsonschema import Draft202012Validator
 
 from app.eval.classify import classify_trajectory
 
@@ -131,6 +135,8 @@ def _messages(raw: dict[str, Any], pseudonyms: dict[str, str]) -> list[dict[str,
 def normalize_trajectories(trajectories: list[dict[str, Any]]) -> dict[str, Any]:
     raw_copy = deepcopy(trajectories)
     pseudonyms = _campaign_map(raw_copy)
+    schema_path = Path(__file__).resolve().parents[2] / "config" / "eval" / "trajectory_v1.schema.json"
+    validator = Draft202012Validator(json.loads(schema_path.read_text(encoding="utf-8")))
     normalized: list[dict[str, Any]] = []
     quarantine: list[dict[str, str]] = []
     for raw in raw_copy:
@@ -167,6 +173,11 @@ def normalize_trajectories(trajectories: list[dict[str, Any]]) -> dict[str, Any]
                 "fault_schedule_id": raw["fault_schedule_id"],
             },
         }
+        if not validator.is_valid(item):
+            quarantine.append(
+                {"run_id": str(raw["run_id"]), "reason_code": "INVALID_NORMALIZED_SCHEMA"}
+            )
+            continue
         if scan_secret_hits(item):
             quarantine.append(
                 {"run_id": str(raw["run_id"]), "reason_code": "SECRET_REDACTION_FAILED"}

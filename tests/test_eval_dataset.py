@@ -136,6 +136,10 @@ def test_dataset_meets_slices_lineage_and_is_byte_deterministic(tmp_path: Path) 
     assert len({row["id"] for row in rows}) == len(rows)
     assert all(row["assertions"] for row in rows)
     assert all(len(row["source_sha256"]) == 64 for row in rows)
+    for row in rows:
+        operators = {assertion["operator"] for assertion in row["assertions"]}
+        assert "sse_sequence_continuous" in operators
+        assert "expected_post_state" in operators
 
 
 def test_replay_fixture_uses_the_same_pseudonyms_as_redacted_inputs() -> None:
@@ -149,3 +153,23 @@ def test_replay_fixture_uses_the_same_pseudonyms_as_redacted_inputs() -> None:
         "campaign_003",
     ]
     assert "camp_" not in json.dumps(state)
+
+
+def test_environment_behavior_negative_is_not_eligible_for_dataset(tmp_path: Path) -> None:
+    catalog = load_eval_catalog(LAB_ROOT / "config" / "eval")
+    items = _normalized()
+    environment = next(item for item in items if item["scenario_kind"] == "environment")
+    environment["attribution"]["dataset_eligibility"] = "behavior_negative"
+    sample, _ = create_review_material(items, "c" * 64)
+    review = _approved_review(items, sample)
+
+    with pytest.raises(ValueError, match="environment behavior-negative"):
+        build_dataset(
+            items,
+            catalog,
+            sample,
+            review,
+            output_dir=tmp_path,
+            source_date_epoch=1_700_000_000,
+            metadata={},
+        )

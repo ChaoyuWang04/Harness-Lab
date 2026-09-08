@@ -33,7 +33,8 @@ def aggregate_gate(criteria: list[dict[str, Any]], *, output: Path) -> dict[str,
     if "FAIL" in statuses:
         status = "FAIL"
     elif "PENDING" in statuses:
-        status = "PENDING_HUMAN"
+        pending_names = {item["name"] for item in criteria if item["status"] == "PENDING"}
+        status = "PENDING_HUMAN" if "human_review" in pending_names else "PENDING_RESTORE"
     elif statuses <= {"PASS", "WARN"}:
         status = "PASS"
     else:
@@ -45,6 +46,86 @@ def aggregate_gate(criteria: list[dict[str, Any]], *, output: Path) -> dict[str,
         "criteria": criteria,
     }
     atomic_write_json(output, result, overwrite=output.exists())
+    return result
+
+
+def validate_resume_identity(
+    state: dict[str, Any],
+    *,
+    artifact_dir: Path,
+    gate_id: str,
+    commit: str,
+    database_url: str,
+    redis_url: str,
+) -> None:
+    if (
+        state.get("status") != "PENDING_HUMAN"
+        or state.get("gate_id") != gate_id
+        or state.get("commit") != commit
+    ):
+        raise SystemExit("resume state, gate, or commit identity mismatch")
+    checks = {
+        "database URL": (state.get("database_url_sha256"), hashlib.sha256(database_url.encode()).hexdigest()),
+        "Redis URL": (state.get("redis_url_sha256"), hashlib.sha256(redis_url.encode()).hexdigest()),
+        "cohort manifest": (state.get("cohort_manifest_sha256"), sha256_file(artifact_dir / "cohort_manifest.json")),
+        "raw manifest": (state.get("raw_manifest_sha256"), sha256_file(artifact_dir / "raw" / "export_manifest.json")),
+        "normalized SHA": (state.get("normalized_sha256"), sha256_file(artifact_dir / "normalized" / "trajectories.jsonl")),
+    }
+    for name, (expected, observed) in checks.items():
+        if expected != observed:
+            raise SystemExit(f"resume {name} mismatch")
+    cohort = json.loads((artifact_dir / "cohort_manifest.json").read_text(encoding="utf-8"))
+    run_ids = [item["run_id"] for item in cohort.get("cases", [])]
+    if len(run_ids) != 50 or len(set(run_ids)) != 50 or run_ids != state.get("run_ids"):
+        raise SystemExit("resume cohort run IDs mismatch")
+    sample = json.loads((artifact_dir / "attribution" / "review_sample.json").read_text(encoding="utf-8"))
+    if sample.get("sample_sha256") != state.get("review_sample_sha256"):
+        raise SystemExit("resume review sample SHA mismatch")
+
+
+def finalize_after_restore(*, artifact_dir: Path, gate_id: str, commit: str) -> dict[str, Any]:
+    state_path = artifact_dir / "gate_state.json"
+    gate_path = artifact_dir / "gate_m4.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    gate = json.loads(gate_path.read_text(encoding="utf-8"))
+    if state.get("status") != "PENDING_RESTORE" or state.get("gate_id") != gate_id or state.get("commit") != commit:
+        raise SystemExit("finalize state, gate, or commit identity mismatch")
+    inspect_path = artifact_dir / "post_restore_inspect_resume.json"
+    health_path = artifact_dir / "post_restore_health_resume.json"
+    health = json.loads(health_path.read_text(encoding="utf-8"))
+    if health.get("status") != "ok":
+        raise SystemExit("normal API health restoration mismatch")
+    containers = json.loads(inspect_path.read_text(encoding="utf-8"))
+    expected_services = {"api", "dispatcher", "worker", "sweeper"}
+    services = [item.get("service") for item in containers]
+    if len(containers) != 4 or set(services) != expected_services or any(services.count(name) != 1 for name in expected_services):
+        raise SystemExit("normal runtime service topology mismatch")
+    expected_env = {
+        "DATABASE_URL": "postgresql+psycopg://postgres:harness@postgres:5432/harness",
+        "REDIS_URL": "redis://redis:6379/0",
+        "LLM_BASE_URL": "http://ollama:11434/v1",
+    }
+    for container in containers:
+        if not container.get("running"):
+            raise SystemExit("normal runtime contains a stopped service")
+        environment = container.get("environment", {})
+        for key, expected in expected_env.items():
+            if environment.get(key) != expected:
+                raise SystemExit(f"normal runtime {key} mismatch")
+        if container.get("service") == "worker" and environment.get("CAPTURE_MODEL_TURNS") != "false":
+            raise SystemExit("normal worker capture was not disabled")
+    criteria = [
+        ({**item, "status": "PASS", "observed": {"services": sorted(expected_services), "worker_count": 1}}
+         if item["name"] == "normal_runtime_restored" else item)
+        for item in gate["criteria"]
+    ]
+    result = aggregate_gate(criteria, output=gate_path)
+    if not result["all_passed"]:
+        raise SystemExit("M4 remains non-passing after runtime restoration")
+    state["status"] = "COMPLETE"
+    state["post_restore_inspect_sha256"] = sha256_file(inspect_path)
+    state["post_restore_health_sha256"] = sha256_file(health_path)
+    atomic_write_json(state_path, state, overwrite=True)
     return result
 
 
@@ -70,13 +151,43 @@ class LiveCohortRuntime:
         self.proxy_base = proxy_base.rstrip("/")
         self.headers = {"x-harness-m4-token": control_token}
         self.catalog = catalog
-        with self.normal_engine.connect() as connection:
-            self.normal_run_count = int(connection.scalar(select(func.count()).select_from(AgentRun)) or 0)
-        self.normal_redis_size = int(self.normal_redis.dbsize())
+        self.normal_database_digest = self._normal_database_digest()
+        self.normal_redis_digest = self._redis_digest(self.normal_redis)
 
     def close(self) -> None:
         self.engine.dispose()
         self.normal_engine.dispose()
+
+    def _normal_database_digest(self) -> str:
+        models = (AgentRun, RunEvent, ToolCall, BudgetAudit, OutboxJob, ModelTurnRecord)
+        with sessionmaker(self.normal_engine)() as session:
+            counts = {
+                model.__tablename__: int(
+                    session.scalar(select(func.count()).select_from(model)) or 0
+                )
+                for model in models
+            }
+            campaigns = [
+                {
+                    "id": row.id,
+                    "name": row.name,
+                    "budget": float(row.budget),
+                    "spend_today": float(row.spend_today),
+                    "status": row.status,
+                }
+                for row in session.scalars(select(Campaign).order_by(Campaign.id)).all()
+            ]
+        return hashlib.sha256(canonical_json({"counts": counts, "campaigns": campaigns})).hexdigest()
+
+    @staticmethod
+    def _redis_digest(client: Redis) -> str:
+        digest = hashlib.sha256()
+        for key in sorted(client.scan_iter()):
+            payload = client.dump(key)
+            digest.update(len(key).to_bytes(8, "big"))
+            digest.update(key)
+            digest.update(payload or b"")
+        return digest.hexdigest()
 
     def restore_fixture(self, case: EvalCase) -> str:
         fixture = self.catalog.world_fixtures[case.world_fixture_id]
@@ -177,11 +288,13 @@ class LiveCohortRuntime:
             raise CohortError(f"failed to disarm {case.case_id}: {response.status_code}")
 
     def contamination(self) -> dict[str, int]:
-        with self.normal_engine.connect() as connection:
-            current_runs = int(connection.scalar(select(func.count()).select_from(AgentRun)) or 0)
         return {
-            "normal_database_rows": current_runs - self.normal_run_count,
-            "normal_redis_jobs": int(self.normal_redis.dbsize()) - self.normal_redis_size,
+            "normal_database_changed": int(
+                self._normal_database_digest() != self.normal_database_digest
+            ),
+            "normal_redis_changed": int(
+                self._redis_digest(self.normal_redis) != self.normal_redis_digest
+            ),
         }
 
 
@@ -211,6 +324,13 @@ def verify_fault_attempt_parity(
         if actual != schedule.decisions:
             raise CohortError(
                 f"fault-attempt parity failed for {case.case_id}: {actual} != {schedule.decisions}"
+            )
+        proxy_decisions = by_case[case.case_id].get("schedule_state", {}).get(
+            "registered_decisions"
+        )
+        if proxy_decisions != actual:
+            raise CohortError(
+                f"proxy/model-turn parity failed for {case.case_id}: {proxy_decisions} != {actual}"
             )
         results.append({"case_id": case.case_id, "decisions": actual})
     counts = Counter(decision for item in results for decision in item["decisions"])
@@ -312,9 +432,17 @@ def summarize_watchdog(path: Path) -> dict[str, Any]:
         raise CohortError("resource watchdog produced no valid sample")
     peak_rss = max(int(item["rss_bytes"]) for item in valid)
     oom_count = max(int(item.get("oom_count", 0)) for item in valid)
-    if peak_rss >= 4 * 1024**3 or oom_count:
-        raise CohortError(f"resource stop line failed: peak_rss={peak_rss}, oom={oom_count}")
-    return {"samples": len(valid), "peak_rss_bytes": peak_rss, "oom_count": oom_count}
+    restart_count = max(int(item.get("restart_count", 0)) for item in valid)
+    if peak_rss >= 4 * 1024**3 or oom_count or restart_count:
+        raise CohortError(
+            f"resource stop line failed: peak_rss={peak_rss}, oom={oom_count}, restart={restart_count}"
+        )
+    return {
+        "samples": len(valid),
+        "peak_rss_bytes": peak_rss,
+        "oom_count": oom_count,
+        "restart_count": restart_count,
+    }
 
 
 def _docker_compose(lab_root: Path, *arguments: str, environment: dict[str, str] | None = None) -> None:
@@ -698,8 +826,13 @@ def run_new(args: argparse.Namespace) -> int:
     fault_parity = verify_fault_attempt_parity(runtime, cohort)
     langfuse_parity = verify_langfuse_parity(runtime, cohort)
     raw_manifest = export_trajectories(fixtures, artifact_dir / "raw")
-    raw = _read_jsonl(artifact_dir / "raw" / "trajectories.jsonl")
+    raw_path = artifact_dir / "raw" / "trajectories.jsonl"
+    raw_sha_before_normalization = sha256_file(raw_path)
+    raw = _read_jsonl(raw_path)
     normalized_result = normalize_trajectories(raw)
+    raw_sha_after_normalization = sha256_file(raw_path)
+    if raw_sha_before_normalization != raw_sha_after_normalization:
+        raise CohortError("raw trajectory bytes changed during normalization")
     normalized_dir = artifact_dir / "normalized"
     quarantine_dir = artifact_dir / "quarantine"
     normalized_sha = atomic_write_jsonl(
@@ -744,6 +877,7 @@ def run_new(args: argparse.Namespace) -> int:
         "fault_attempt_parity": fault_parity,
         "langfuse_parity": langfuse_parity,
         "resources": resources,
+        "raw_immutable_sha256": raw_sha_after_normalization,
     }
     atomic_write_json(artifact_dir / "gate_state.json", state)
     aggregate_gate(
@@ -761,6 +895,12 @@ def run_new(args: argparse.Namespace) -> int:
             {"name": "langfuse_parity", "status": "PASS", "observed": 20, "expected": 20},
             {"name": "resource_stop_line", "status": "PASS", "observed": resources},
             {
+                "name": "raw_immutable",
+                "status": "PASS",
+                "observed": raw_sha_after_normalization,
+                "expected": raw_sha_before_normalization,
+            },
+            {
                 "name": "quarantine",
                 "status": "PASS" if not normalized_result["quarantine"] else "FAIL",
                 "observed": len(normalized_result["quarantine"]),
@@ -776,8 +916,14 @@ def run_new(args: argparse.Namespace) -> int:
 def run_resume(args: argparse.Namespace) -> int:
     state_path = args.artifact_dir / "gate_state.json"
     state = json.loads(state_path.read_text(encoding="utf-8"))
-    if state.get("status") != "PENDING_HUMAN" or state.get("commit") != args.commit:
-        raise SystemExit("resume state or commit identity mismatch")
+    validate_resume_identity(
+        state,
+        artifact_dir=args.artifact_dir,
+        gate_id=args.gate_id,
+        commit=args.commit,
+        database_url=args.database_url,
+        redis_url=args.redis_url,
+    )
     normalized = _read_jsonl(args.artifact_dir / "normalized" / "trajectories.jsonl")
     sample = json.loads((args.artifact_dir / "attribution" / "review_sample.json").read_text())
     review = json.loads((args.artifact_dir / "attribution" / "human_review.json").read_text())
@@ -860,7 +1006,9 @@ def run_resume(args: argparse.Namespace) -> int:
     )
     if safety_side_effects:
         raise CohortError(f"live replay safety side effects: {safety_side_effects}")
-    criteria = [
+    prior_gate = json.loads((args.artifact_dir / "gate_m4.json").read_text(encoding="utf-8"))
+    prior_criteria = [item for item in prior_gate["criteria"] if item["name"] != "human_review"]
+    criteria = prior_criteria + [
         {"name": "human_review", "status": "PASS", "observed": manifest["review"], "expected": "14/15 and critical 10/10"},
         {"name": "dataset", "status": "PASS", "observed": manifest["slice_counts"], "expected": {"capability": 8, "resilience": 6, "safety": 6}},
         {
@@ -882,9 +1030,12 @@ def run_resume(args: argparse.Namespace) -> int:
             "expected": "baseline only",
         },
         {"name": "safety_side_effects", "status": "PASS", "observed": 0, "expected": 0},
+        {"name": "normal_runtime_restored", "status": "PENDING", "observed": None, "expected": "api/dispatcher/worker/sweeper on DB0 Redis0 direct Ollama; capture off"},
     ]
     aggregate_gate(criteria, output=args.artifact_dir / "gate_m4.json")
-    state["status"] = "COMPLETE"
+    state["status"] = "PENDING_RESTORE"
+    state["dataset_manifest_sha256"] = sha256_file(args.eval_output_dir / "dataset_v1.manifest.json")
+    state["dataset_sha256"] = sha256_file(dataset_path)
     atomic_write_json(state_path, state, overwrite=True)
     return 0
 
@@ -917,11 +1068,20 @@ def build_parser() -> argparse.ArgumentParser:
         current.add_argument("--replay-live2-database-name", required=True)
         current.add_argument("--replay-live1-redis-url", required=True)
         current.add_argument("--replay-live2-redis-url", required=True)
+    finalize = subparsers.add_parser("finalize")
+    finalize.add_argument("--gate-id", required=True)
+    finalize.add_argument("--artifact-dir", type=Path, required=True)
+    finalize.add_argument("--commit", required=True)
     return parser
 
 
 def main() -> None:
     args = build_parser().parse_args()
+    if args.mode == "finalize":
+        finalize_after_restore(
+            artifact_dir=args.artifact_dir, gate_id=args.gate_id, commit=args.commit
+        )
+        raise SystemExit(0)
     raise SystemExit(run_new(args) if args.mode == "new" else run_resume(args))
 
 

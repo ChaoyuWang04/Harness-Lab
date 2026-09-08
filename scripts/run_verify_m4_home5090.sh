@@ -29,6 +29,8 @@ test_redis="redis://redis:6379/15"
 artifact_dir="${lab_root}/artifacts/m4/${gate_id}"
 compose=(docker compose --env-file secrets/.env --profile m4)
 watchdog_pid=""
+finalize_requested=false
+commit_sha=""
 
 stop_watchdog() {
   if [[ -n "${watchdog_pid}" ]] && kill -0 "${watchdog_pid}" >/dev/null 2>&1; then
@@ -37,8 +39,7 @@ stop_watchdog() {
   fi
 }
 
-restore_normal_runtime() {
-  stop_watchdog
+converge_normal_runtime() {
   HARNESS_COMPOSE_DATABASE_URL="postgresql+psycopg://postgres:harness@postgres:5432/harness" \
   HARNESS_COMPOSE_REDIS_URL="redis://redis:6379/0" \
   HARNESS_COMPOSE_LLM_BASE_URL="http://ollama:11434/v1" \
@@ -46,8 +47,49 @@ restore_normal_runtime() {
   HARNESS_TEST_PAUSE_AFTER_TOOL_SECONDS=0 \
     docker compose --env-file secrets/.env up -d --force-recreate --scale worker=1 api dispatcher worker sweeper
   docker compose --env-file secrets/.env --profile m4 stop chaos-proxy >/dev/null 2>&1 || true
+}
+
+restore_normal_runtime() {
+  stop_watchdog
+  converge_normal_runtime
   if [[ -d "${artifact_dir}" ]]; then
     docker compose --env-file secrets/.env ps --format json > "${artifact_dir}/post_restore_${mode#--}.json"
+    health_ok=false
+    for _ in $(seq 1 60); do
+      if curl -fsS "http://127.0.0.1:8000/health" > "${artifact_dir}/post_restore_health_${mode#--}.json"; then
+        health_ok=true
+        break
+      fi
+      sleep 1
+    done
+    if [[ "${health_ok}" != "true" ]]; then
+      echo "Normal API did not recover" >&2
+      return 1
+    fi
+    container_ids="$(docker compose --env-file secrets/.env ps -q api dispatcher worker sweeper)"
+    if [[ -n "${container_ids}" ]]; then
+      docker inspect ${container_ids} | python3 -c '
+import json, sys
+allowed = {"DATABASE_URL", "REDIS_URL", "LLM_BASE_URL", "CAPTURE_MODEL_TURNS"}
+result = []
+for item in json.load(sys.stdin):
+    environment = dict(value.split("=", 1) for value in item["Config"].get("Env", []) if "=" in value)
+    result.append({
+        "service": item["Config"].get("Labels", {}).get("com.docker.compose.service"),
+        "running": bool(item.get("State", {}).get("Running")),
+        "environment": {key: environment[key] for key in sorted(allowed) if key in environment},
+    })
+json.dump(result, sys.stdout, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+sys.stdout.write("\n")
+' > "${artifact_dir}/post_restore_inspect_${mode#--}.json"
+    fi
+    if [[ "${finalize_requested}" == "true" ]]; then
+      docker run --rm -v "${lab_root}:${lab_root}" -w "${lab_root}" harness-lab-api \
+        python scripts/verify_m4.py finalize \
+          --gate-id "${gate_id}" \
+          --artifact-dir "${artifact_dir}" \
+          --commit "${commit_sha}"
+    fi
   fi
 }
 
@@ -73,8 +115,15 @@ else
     echo "Resume requires an existing gate_state.json" >&2
     exit 2
   fi
+  if [[ -e "${artifact_dir}/pre_resume_runtime.json" ]]; then
+    echo "Resume evidence already exists; use a new gate id after a failed resume" >&2
+    exit 2
+  fi
   docker compose --env-file secrets/.env ps --format json > "${artifact_dir}/pre_resume_runtime.json"
 fi
+
+# Always converge stale M4 writers to the ordinary runtime before a new or resumed Gate.
+converge_normal_runtime
 
 "${compose[@]}" build api dispatcher worker sweeper migrate chaos-proxy
 docker run --rm harness-lab-api python -c "from app.eval.model_turns import record_model_turn; from app.eval.dataset import build_dataset"
@@ -134,7 +183,7 @@ CAPTURE_MODEL_TURNS=true \
 HARNESS_TEST_PAUSE_AFTER_TOOL_SECONDS=45 \
   "${compose[@]}" up -d --force-recreate --scale worker=1 chaos-proxy api dispatcher worker sweeper
 
-docker run --rm --network harness-lab_default --env-file secrets/.env \
+if docker run --rm --network harness-lab_default --env-file secrets/.env \
   -e DATABASE_URL="${generation_url}" \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v /usr/bin/docker:/usr/bin/docker:ro \
@@ -162,4 +211,12 @@ docker run --rm --network harness-lab_default --env-file secrets/.env \
     --api-base "http://api:8000" \
     --proxy-base "http://chaos-proxy:9000" \
     --control-token "${control_token}" \
-    --eval-output-dir "${lab_root}/eval"
+    --eval-output-dir "${lab_root}/eval"; then
+  verifier_rc=0
+else
+  verifier_rc=$?
+fi
+if [[ "${mode}" == "resume" && "${verifier_rc}" -eq 0 ]]; then
+  finalize_requested=true
+fi
+exit "${verifier_rc}"

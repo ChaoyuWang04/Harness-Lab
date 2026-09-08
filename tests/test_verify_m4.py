@@ -163,6 +163,102 @@ def test_m4_gate_aggregator_marks_pending_and_fail_as_not_passed(tmp_path: Path)
     assert failed["status"] == "FAIL"
 
 
+def test_resume_identity_checks_every_persisted_hash_and_run_id(tmp_path: Path) -> None:
+    from scripts.verify_m4 import validate_resume_identity
+
+    artifact_dir = tmp_path / "gate"
+    (artifact_dir / "raw").mkdir(parents=True)
+    (artifact_dir / "normalized").mkdir()
+    (artifact_dir / "attribution").mkdir()
+    cohort = {"cases": [{"run_id": f"run-{index}"} for index in range(50)]}
+    atomic_write_json(artifact_dir / "cohort_manifest.json", cohort)
+    atomic_write_json(artifact_dir / "raw" / "export_manifest.json", {"count": 50})
+    normalized = artifact_dir / "normalized" / "trajectories.jsonl"
+    normalized.write_text("{}\n", encoding="utf-8")
+    sample = {"sample_sha256": "a" * 64}
+    atomic_write_json(artifact_dir / "attribution" / "review_sample.json", sample)
+    state = {
+        "status": "PENDING_HUMAN",
+        "gate_id": "gate1",
+        "commit": "b" * 40,
+        "database_url_sha256": __import__("hashlib").sha256(b"db").hexdigest(),
+        "redis_url_sha256": __import__("hashlib").sha256(b"redis").hexdigest(),
+        "cohort_manifest_sha256": __import__("hashlib").sha256(
+            (artifact_dir / "cohort_manifest.json").read_bytes()
+        ).hexdigest(),
+        "raw_manifest_sha256": __import__("hashlib").sha256(
+            (artifact_dir / "raw" / "export_manifest.json").read_bytes()
+        ).hexdigest(),
+        "normalized_sha256": __import__("hashlib").sha256(normalized.read_bytes()).hexdigest(),
+        "review_sample_sha256": "a" * 64,
+        "run_ids": [f"run-{index}" for index in range(50)],
+    }
+
+    validate_resume_identity(
+        state,
+        artifact_dir=artifact_dir,
+        gate_id="gate1",
+        commit="b" * 40,
+        database_url="db",
+        redis_url="redis",
+    )
+    state["normalized_sha256"] = "0" * 64
+    with pytest.raises(SystemExit, match="normalized SHA"):
+        validate_resume_identity(
+            state,
+            artifact_dir=artifact_dir,
+            gate_id="gate1",
+            commit="b" * 40,
+            database_url="db",
+            redis_url="redis",
+        )
+
+
+def test_finalize_requires_normal_runtime_restoration_before_pass(tmp_path: Path) -> None:
+    from scripts.verify_m4 import finalize_after_restore
+
+    artifact_dir = tmp_path / "gate"
+    artifact_dir.mkdir()
+    atomic_write_json(
+        artifact_dir / "gate_m4.json",
+        {
+            "schema_version": "m4_gate_v1",
+            "status": "PENDING_RESTORE",
+            "all_passed": False,
+            "criteria": [
+                {"name": "human_review", "status": "PASS"},
+                {"name": "normal_runtime_restored", "status": "PENDING"},
+            ],
+        },
+    )
+    atomic_write_json(
+        artifact_dir / "gate_state.json",
+        {"status": "PENDING_RESTORE", "gate_id": "gate1", "commit": "c" * 40},
+    )
+    inspect = [
+        {
+            "service": service,
+            "environment": {
+                "DATABASE_URL": "postgresql+psycopg://postgres:harness@postgres:5432/harness",
+                "REDIS_URL": "redis://redis:6379/0",
+                "LLM_BASE_URL": "http://ollama:11434/v1",
+                "CAPTURE_MODEL_TURNS": "false",
+            },
+            "running": True,
+        }
+        for service in ("api", "dispatcher", "worker", "sweeper")
+    ]
+    atomic_write_json(artifact_dir / "post_restore_inspect_resume.json", inspect)
+    atomic_write_json(artifact_dir / "post_restore_health_resume.json", {"status": "ok"})
+
+    gate = finalize_after_restore(
+        artifact_dir=artifact_dir, gate_id="gate1", commit="c" * 40
+    )
+
+    assert gate["all_passed"] is True
+    assert json.loads((artifact_dir / "gate_state.json").read_text())["status"] == "COMPLETE"
+
+
 @pytest.mark.parametrize(
     ("value", "expected"),
     [("0B", 0), ("1.5MiB", round(1.5 * 1024**2)), ("2 GiB", 2 * 1024**3)],
@@ -171,3 +267,16 @@ def test_watchdog_parses_docker_memory_units(value: str, expected: int) -> None:
     from scripts.m4_watchdog import parse_bytes
 
     assert parse_bytes(value) == expected
+
+
+def test_resource_summary_rejects_any_container_restart(tmp_path: Path) -> None:
+    from scripts.verify_m4 import summarize_watchdog
+
+    path = tmp_path / "watchdog.jsonl"
+    path.write_text(
+        json.dumps({"rss_bytes": 1024, "oom_count": 0, "restart_count": 1}) + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(CohortError, match="restart"):
+        summarize_watchdog(path)
