@@ -286,6 +286,15 @@
 - 结论：预建连接不是根因，不注册完整新 Gate，也不继续增加进程、连接数或放宽阈值。该运行的脱敏证据保存在 `artifacts/m3/diagnostics/load_four_poolwarm.json`
 - 回退：连接池预热代码与 Compose 配置不进入普通运行面。下一候选是把新 run 的写路径从三次 flush 加首事件的两次读取，收敛成仍保持 run/event/outbox 原子性的单次 flush；实施前单独评审与预注册
 
+### [M3-WRITEPATH-DIAG-PRE] 新 run 单 flush 写路径定向实压
+
+- 时间：2026-09-08 CST；用户已明确批准该核心写路径方案
+- 改动边界：只优化无历史状态的新 run 创建。`AgentRun`、固定 `sequence=1` 的 `run.created`、`OutboxJob` 以及可选 `IdempotencyKey` 在原有单事务中一次 staged、一次 flush；后续事件的行锁、sequence 计算、worker fencing、公开 API 和数据库 schema 均不改变
+- 机制判据：单元测试必须先在旧实现观察到两次 flush 后失败，再在新实现观察到一次 flush；真实 PostgreSQL 集成测试必须证明 run/event/outbox 同时落库、首事件为 sequence 1、外层回滚无半成品、并发幂等仍只产生一个 run
+- 隔离：专用数据库 `harness_m3_writepath_probe`、测试数据库 `harness_m3_writepath_probe_test`、Redis DB 10、证据 `artifacts/m3/diagnostics/load_four_writepath.json`，不复用前次诊断
+- 固定负载与门槛：四执行 worker、300 ms provider latency、500 runs、concurrency=50、连接复用、无 Idempotency-Key；要求 500/500 terminal、0 failed、POST P95 `<150 ms`、Lab RSS `<4 GiB`
+- 停止与晋级：未通过则保留证据并停止，不运行完整 Gate；通过后才以全新数据库、Redis DB 和证据目录注册完整 M3 Gate，全部六项仍按原门槛重新执行
+
 ## 运行面迁移 · 独立 Git + home-5090
 
 ### [MIG-G1] Git 边界

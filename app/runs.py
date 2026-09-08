@@ -7,8 +7,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.events import append_event
-from app.models import AgentRun, IdempotencyKey, OutboxJob
+from app.models import AgentRun, IdempotencyKey, OutboxJob, RunEvent
 
 
 def new_run_id() -> str:
@@ -35,14 +34,16 @@ def create_run(
             return existing
 
     run = AgentRun(id=new_run_id(), status="queued", input_json=input_json)
-    session.add(run)
-    session.flush()
-    append_event(session, run.id, "run.created", {})
     payload: dict[str, Any] = {"run_id": run.id}
     if trace_context:
         payload["trace_context"] = trace_context
-    session.add(OutboxJob(task="execute_run", payload=payload))
+    records = [
+        run,
+        RunEvent(run_id=run.id, sequence=1, type="run.created", payload={}),
+        OutboxJob(task="execute_run", payload=payload),
+    ]
     if idempotency_key:
-        session.add(IdempotencyKey(key=idempotency_key, run_id=run.id))
+        records.append(IdempotencyKey(key=idempotency_key, run_id=run.id))
+    session.add_all(records)
     session.flush()
     return run

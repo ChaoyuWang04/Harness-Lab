@@ -62,6 +62,13 @@ case "${gate_id}" in
     m3_output="${lab_root}/artifacts/m3/diagnostics/load_four_poolwarm.json"
     verifier_mode_args=(--load-four-only)
     ;;
+  writepath_probe)
+    m3_database_name="harness_m3_writepath_probe"
+    m3_test_database_name="harness_m3_writepath_probe_test"
+    m3_redis_url="redis://redis:6379/10"
+    m3_output="${lab_root}/artifacts/m3/diagnostics/load_four_writepath.json"
+    verifier_mode_args=(--load-four-only)
+    ;;
   *)
     echo "Unsupported M3 gate id: ${gate_id}" >&2
     exit 2
@@ -106,6 +113,14 @@ docker run --rm \
   -w "${lab_root}" \
   harness-lab-api \
   python tests/test_outbox.py
+
+docker run --rm \
+  --network harness-lab_default \
+  -e TEST_DATABASE_URL="${m3_test_database_url}" \
+  -v "${lab_root}:${lab_root}" \
+  -w "${lab_root}" \
+  harness-lab-api \
+  python tests/test_runs_service.py
 
 HARNESS_COMPOSE_DATABASE_URL="${m3_database_url}" \
 HARNESS_COMPOSE_REDIS_URL="${m3_redis_url}" \

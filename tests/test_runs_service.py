@@ -15,7 +15,42 @@ LAB_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(LAB_ROOT))
 
 from app.models import AgentRun, IdempotencyKey, OutboxJob, RunEvent  # noqa: E402
+from app import runs as runs_module  # noqa: E402
 from app.runs import create_run  # noqa: E402
+
+
+def test_new_run_stages_run_event_and_outbox_with_one_flush(monkeypatch) -> None:
+    staged = []
+    flushes = 0
+
+    class RecordingSession:
+        def add(self, value) -> None:
+            staged.append(value)
+
+        def add_all(self, values) -> None:
+            staged.extend(values)
+
+        def flush(self) -> None:
+            nonlocal flushes
+            flushes += 1
+
+    def stage_legacy_event(session, run_id, event_type, payload):
+        event = RunEvent(run_id=run_id, sequence=1, type=event_type, payload=payload)
+        session.add(event)
+        return event
+
+    monkeypatch.setattr(runs_module, "append_event", stage_legacy_event, raising=False)
+    run = create_run(RecordingSession(), {"prompt": "single flush"})
+
+    assert flushes == 1
+    assert [type(value) for value in staged] == [AgentRun, RunEvent, OutboxJob]
+    assert staged[0] is run
+    assert (staged[1].run_id, staged[1].sequence, staged[1].type) == (
+        run.id,
+        1,
+        "run.created",
+    )
+    assert staged[2].payload == {"run_id": run.id}
 
 
 @unittest.skipUnless(os.getenv("TEST_DATABASE_URL"), "requires Compose PostgreSQL")

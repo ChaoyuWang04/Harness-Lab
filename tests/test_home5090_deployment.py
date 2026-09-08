@@ -132,6 +132,17 @@ def test_poolwarm_load_probe_has_fresh_namespace_and_mode() -> None:
     assert "--load-four-only" in script
 
 
+def test_writepath_load_probe_has_fresh_namespace_and_mode() -> None:
+    script = (LAB_ROOT / "scripts" / "run_verify_m3_home5090.sh").read_text(encoding="utf-8")
+
+    assert "writepath_probe" in script
+    assert "harness_m3_writepath_probe" in script
+    assert "redis://redis:6379/10" in script
+    assert "artifacts/m3/diagnostics/load_four_writepath.json" in script
+    assert script.count("verifier_mode_args=(--load-four-only)") >= 2
+    assert "python tests/test_runs_service.py" in script
+
+
 def test_m3_wrapper_rebuilds_every_python_service_before_injection() -> None:
     script = (LAB_ROOT / "scripts" / "run_verify_m3_home5090.sh").read_text(encoding="utf-8")
 
