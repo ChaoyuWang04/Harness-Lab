@@ -292,3 +292,14 @@ def test_resource_summary_rejects_any_container_restart(tmp_path: Path) -> None:
 
     with pytest.raises(CohortError, match="restart"):
         summarize_watchdog(path)
+
+
+def test_new_gate_waits_for_api_and_proxy_health(monkeypatch: pytest.MonkeyPatch) -> None:
+    from scripts import verify_m4
+
+    seen: list[str] = []
+    monkeypatch.setattr(verify_m4, "_wait_http", seen.append)
+
+    verify_m4.wait_for_m4_runtime("http://api:8000", "http://chaos-proxy:9000")
+
+    assert seen == ["http://api:8000/health", "http://chaos-proxy:9000/health"]

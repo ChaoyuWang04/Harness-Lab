@@ -473,6 +473,11 @@ def _wait_http(url: str, *, timeout_seconds: int = 120) -> None:
     raise CohortError(f"service did not become healthy: {url}")
 
 
+def wait_for_m4_runtime(api_base: str, proxy_base: str) -> None:
+    _wait_http(f"{api_base.rstrip('/')}/health")
+    _wait_http(f"{proxy_base.rstrip('/')}/health")
+
+
 def run_requeue_positive_control(
     runtime: LiveCohortRuntime,
     *,
@@ -809,6 +814,7 @@ def run_new(args: argparse.Namespace) -> int:
     validate_gate_id(args.gate_id)
     artifact_dir = args.artifact_dir
     validate_new_artifact_dir(artifact_dir)
+    wait_for_m4_runtime(args.api_base, args.proxy_base)
     catalog = load_eval_catalog(args.config_root)
     runtime = LiveCohortRuntime(
         database_url=args.database_url,
