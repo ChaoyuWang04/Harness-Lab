@@ -356,6 +356,15 @@ def verify_fault_attempt_parity(
     return {"cases": len(results), "counts": actual_counts}
 
 
+def normalize_langfuse_io(value: Any) -> Any:
+    if not isinstance(value, str):
+        return value
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        return value
+
+
 def verify_langfuse_parity(
     runtime: LiveCohortRuntime,
     cohort: dict[str, Any],
@@ -416,8 +425,10 @@ def verify_langfuse_parity(
                     fields="core,basic,io,model,usage,metadata",
                 )
                 matched = any(
-                    observation.input == target["input"]
-                    and observation.output == target["output"]
+                    normalize_langfuse_io(observation.input)
+                    == normalize_langfuse_io(target["input"])
+                    and normalize_langfuse_io(observation.output)
+                    == normalize_langfuse_io(target["output"])
                     and all(
                         (observation.usage_details or {}).get(key) == value
                         for key, value in target["usage"].items()

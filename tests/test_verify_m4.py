@@ -329,6 +329,19 @@ def test_new_gate_waits_for_api_and_proxy_health(monkeypatch: pytest.MonkeyPatch
     assert seen == ["http://api:8000/health", "http://chaos-proxy:9000/health"]
 
 
+def test_langfuse_io_normalization_parses_json_but_preserves_plain_text() -> None:
+    from scripts.verify_m4 import normalize_langfuse_io
+
+    assert normalize_langfuse_io('[{"role":"user","content":"probe"}]') == [
+        {"role": "user", "content": "probe"}
+    ]
+    assert normalize_langfuse_io({"role": "assistant", "content": "ok"}) == {
+        "role": "assistant",
+        "content": "ok",
+    }
+    assert normalize_langfuse_io("plain answer") == "plain answer"
+
+
 def test_m4_runtime_uses_one_api_process(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     from argparse import Namespace
     from scripts import verify_m4
