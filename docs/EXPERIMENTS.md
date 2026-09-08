@@ -310,6 +310,19 @@
 - 固定实现：提交 `6813248`；四 API 进程、普通单执行 worker、EXP-3/5 内按原计划临时扩为四执行 worker；新 run 单事务单 flush，其他可靠性机制不变
 - 判据：从 EXP-1 到 EXP-6 全部重新执行；样本数、故障比例、恢复时限、两个 500×50 臂的 POST P95 `<150 ms`、queue-lag 降幅至少 50%、全局重复审计、比较表完整性和 RSS `<4 GiB` 全部沿用原预注册值。任一项失败即停止并保留本 Gate
 
+### [M3-GATE-9] 六项故障与负载实验完整通过
+
+- 时间：2026-09-08 CST；固定提交 `d4ac0a5`，证据 `artifacts/m3/gate9/gate_m3.json`
+- EXP-1：10/10 次真实 worker 猝死均被注入并恢复为 completed；10 次各有且仅有一条 budget audit，最慢恢复 44.411 秒，PASS
+- EXP-2：dispatcher 在 enqueue 后以 code 91 退出；崩溃窗口 outbox 保持 pending，恢复后 run completed、outbox dispatched，started/terminal event 均各 1，PASS
+- EXP-3：Redis 停止期间 60/60 POST 成功、60 queued、60 pending outbox；恢复后四 worker 在 41.335 秒内使 60/60 terminal，PASS
+- EXP-4：正常臂 30/30 completed；429 臂 29/30 completed、44 retry、唯一失败为 `MODEL_429`；timeout 臂 29/30 completed、33 retry、唯一失败为 `MODEL_TIMEOUT`。timeout 臂真实观察到告警 Firing，清除故障后 Resolved，PASS
+- EXP-5：单 worker 与四 worker 均 500/500 completed、0 failed；POST P95 分别为 116.837/73.189 ms，均 `<150 ms`；queue-lag P95 从 1472.274 秒降至 396.576 秒，下降 73.064%；吞吐从 19.395 提升至 71.939 run/min，PASS
+- EXP-6：20 个客户端各重连 5 次，共 100 次重连；20/20 客户端收到的 SSE sequence 与 PostgreSQL 逐项一致，PASS
+- 全局：六项 `ok=true`；`duplicate_audit_keys=0`；normal/429/load-one/load-four 三指标比较表完整；正常 `harness` 数据库 M3 run 为 0；前后 RSS 为 2726.405/3060.080 MiB，均 `<4 GiB`，OOM=0
+- 恢复：脚本 trap 后八项常驻服务均 running，Ollama/PostgreSQL/Redis/LGTM healthcheck 均 healthy，执行 worker 恢复为 1；现场复核普通数据库 M3 行数仍为 0
+- 结论：Gate M3 `all_passed=true`，G1 六实验、G2 零重复副作用、G3 完整比较表全部通过。M3 完成；后续一键故障按钮是独立的演示功能，不构成或替代本 Gate
+
 ## 运行面迁移 · 独立 Git + home-5090
 
 ### [MIG-G1] Git 边界
