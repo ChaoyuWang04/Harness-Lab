@@ -6,9 +6,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+ARG PACKAGE_INDEX_URL=https://pypi.org/simple
+
 COPY pyproject.toml uv.lock ./
-RUN python -m pip install --no-cache-dir uv \
-    && uv sync --frozen --no-dev
+RUN python -m pip install --no-cache-dir --index-url "$PACKAGE_INDEX_URL" uv \
+    && UV_DEFAULT_INDEX="$PACKAGE_INDEX_URL" uv sync --frozen --no-dev
 
 COPY alembic.ini ./
 COPY alembic ./alembic

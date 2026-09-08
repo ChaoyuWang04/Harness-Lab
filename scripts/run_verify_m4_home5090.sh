@@ -125,7 +125,9 @@ fi
 # Always converge stale M4 writers to the ordinary runtime before a new or resumed Gate.
 converge_normal_runtime
 
-"${compose[@]}" build api dispatcher worker sweeper migrate chaos-proxy
+"${compose[@]}" build \
+  --build-arg PACKAGE_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple \
+  api dispatcher worker sweeper migrate chaos-proxy
 docker run --rm harness-lab-api python -c "from app.eval.model_turns import record_model_turn; from app.eval.dataset import build_dataset"
 docker compose --env-file secrets/.env up -d postgres redis lgtm ollama
 python scripts/m4_watchdog.py \

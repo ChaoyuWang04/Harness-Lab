@@ -200,6 +200,7 @@ def test_compose_registers_private_m4_proxy_and_capture_defaults() -> None:
 
 def test_m4_wrapper_is_isolated_resumable_and_always_restores_normal_runtime() -> None:
     script = (LAB_ROOT / "scripts" / "run_verify_m4_home5090.sh").read_text(encoding="utf-8")
+    dockerfile = (LAB_ROOT / "Dockerfile").read_text(encoding="utf-8")
 
     for database in (
         "harness_m4_${gate_id}",
@@ -215,7 +216,10 @@ def test_m4_wrapper_is_isolated_resumable_and_always_restores_normal_runtime() -
     assert "pre_gate_runtime.json" in script
     assert "CAPTURE_MODEL_TURNS=true" in script
     assert "CAPTURE_MODEL_TURNS=false" in script
-    assert "build api dispatcher worker sweeper migrate chaos-proxy" in script
+    assert "--build-arg" in script
+    assert "PACKAGE_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple" in script
+    assert "ARG PACKAGE_INDEX_URL=https://pypi.org/simple" in dockerfile
+    assert 'UV_DEFAULT_INDEX="$PACKAGE_INDEX_URL"' in dockerfile
     assert "normal-database-url" in script
     assert "scripts/m4_watchdog.py" in script
     assert "--limit-bytes 4294967296" in script
