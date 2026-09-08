@@ -594,7 +594,7 @@ def run_requeue_positive_control(
     return {"run_id": run_id, "terminal": terminal, "run_attempts": [1, 2], "audit_count": 1}
 
 
-def run_capture_off_control(args: argparse.Namespace) -> dict[str, Any]:
+def build_capture_off_environment(args: argparse.Namespace) -> dict[str, str]:
     environment = os.environ.copy()
     environment.update(
         {
@@ -602,10 +602,16 @@ def run_capture_off_control(args: argparse.Namespace) -> dict[str, Any]:
             "HARNESS_COMPOSE_REDIS_URL": args.test_redis_url,
             "HARNESS_COMPOSE_LLM_BASE_URL": "http://ollama:11434/v1",
             "HARNESS_API_WORKERS": "4",
+            "HARNESS_OTEL_EXPORT_ENABLED": "false",
             "CAPTURE_MODEL_TURNS": "false",
             "HARNESS_TEST_PAUSE_AFTER_TOOL_SECONDS": "0",
         }
     )
+    return environment
+
+
+def run_capture_off_control(args: argparse.Namespace) -> dict[str, Any]:
+    environment = build_capture_off_environment(args)
     _docker_compose(
         args.lab_root,
         "up",

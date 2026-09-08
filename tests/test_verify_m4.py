@@ -392,3 +392,15 @@ def test_m4_runtime_uses_one_api_process(monkeypatch: pytest.MonkeyPatch, tmp_pa
 
     assert captured["HARNESS_API_WORKERS"] == "1"
     assert captured["HARNESS_OTEL_EXPORT_ENABLED"] == "false"
+
+
+def test_capture_off_runtime_keeps_local_otel_disabled() -> None:
+    from argparse import Namespace
+    from scripts.verify_m4 import build_capture_off_environment
+
+    environment = build_capture_off_environment(
+        Namespace(test_database_url="db", test_redis_url="redis")
+    )
+
+    assert environment["CAPTURE_MODEL_TURNS"] == "false"
+    assert environment["HARNESS_OTEL_EXPORT_ENABLED"] == "false"
