@@ -64,7 +64,13 @@ class JobExecutionTests(unittest.TestCase):
             session.execute(delete(OutboxJob))
             session.execute(delete(RunEvent))
             session.execute(delete(AgentRun))
-            session.add(AgentRun(id="run_job_001", status="queued", input_json={"prompt": "诊断 camp_001"}))
+            session.add(
+                AgentRun(
+                    id="run_job_001",
+                    status="queued",
+                    input_json={"prompt": "将 camp_001 的预算增加 100。"},
+                )
+            )
 
     def test_job_claims_runs_agent_and_finishes_once(self) -> None:
         client = SequenceClient(

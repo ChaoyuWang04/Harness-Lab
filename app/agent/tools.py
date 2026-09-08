@@ -7,9 +7,10 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.agent.policy import ToolPolicy
 from app.fencing import WorkerFence, lock_current_run
 from app.models import AgentRun, BudgetAudit, Campaign, ToolCall
 
@@ -23,6 +24,10 @@ class ToolResultUnknown(ToolError):
 
 
 class BudgetLimitExceeded(ToolError):
+    pass
+
+
+class BudgetIntentMismatch(ToolError):
     pass
 
 
@@ -112,6 +117,8 @@ def execute_tool_with_outcome(
     step: int,
     tool_name: str,
     arguments: dict[str, Any],
+    *,
+    policy: ToolPolicy | None = None,
 ) -> ToolExecution:
     _lock_current_run(session, run_id, fence)
     tool_key = canonical_tool_key(run_id, step, tool_name, arguments)
@@ -155,6 +162,25 @@ def execute_tool_with_outcome(
             delta = Decimal(str(arguments["delta"]))
         except (KeyError, ValueError) as exc:
             raise ToolError("delta must be numeric") from exc
+        if policy is not None:
+            intent = policy.budget_adjustment
+            if intent is None:
+                raise BudgetIntentMismatch("run has no authorized budget adjustment")
+            if intent.campaign_id != campaign.id:
+                raise BudgetIntentMismatch("campaign does not match the authorized user intent")
+            if delta != intent.resolve(campaign.budget):
+                raise BudgetIntentMismatch("delta does not match the complete authorized user intent")
+            prior_writes = session.scalar(
+                select(func.count())
+                .select_from(ToolCall)
+                .where(
+                    ToolCall.run_id == run_id,
+                    ToolCall.tool_name == "adjust_budget",
+                    ToolCall.status == "succeeded",
+                )
+            )
+            if prior_writes:
+                raise BudgetIntentMismatch("budget adjustment authorization is single-use")
         if abs(delta) > abs(campaign.budget) * Decimal("0.20"):
             raise BudgetLimitExceeded("budget adjustment exceeds 20%")
         campaign.budget += delta
@@ -189,6 +215,8 @@ def execute_tool(
     step: int,
     tool_name: str,
     arguments: dict[str, Any],
+    *,
+    policy: ToolPolicy | None = None,
 ) -> dict[str, Any]:
     return execute_tool_with_outcome(
         session,
@@ -197,4 +225,5 @@ def execute_tool(
         step,
         tool_name,
         arguments,
+        policy=policy,
     ).result

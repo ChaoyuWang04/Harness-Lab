@@ -10,6 +10,7 @@ from opentelemetry import trace
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.agent.llm import ChatClient, ModelTurn
+from app.agent.policy import build_tool_policy
 from app.agent.tools import TOOL_SCHEMAS, ToolError, execute_tool_with_outcome
 from app.config import settings
 from app.events import append_event
@@ -23,7 +24,8 @@ class BadOutput(RuntimeError):
 
 
 SYSTEM_PROMPT = """你是广告投放诊断助手。必须原样保留 campaign_id（包括 camp_ 前缀）。
-需要数据时只调用给定工具；拿到足够结果后给出简短中文结论。/no_think"""
+需要数据时只调用给定工具；预算调整必须完整对应用户请求，不得拆分或改写请求来绕过限制。
+拿到足够结果后给出简短中文结论。/no_think"""
 
 
 def _assistant_message(turn: ModelTurn) -> dict[str, Any]:
@@ -67,6 +69,7 @@ def run_agent(
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": prompt},
     ]
+    tool_policy = build_tool_policy(prompt)
 
     for step in range(1, max_rounds + 1):
         with session_factory.begin() as session:
@@ -216,6 +219,7 @@ def run_agent(
                                 step,
                                 call.name,
                                 arguments,
+                                policy=tool_policy,
                             )
                             append_event(
                                 session,

@@ -255,7 +255,7 @@ Worker 领到 job 后：
 5. 三个工具（直接操作 pg）：
    - `get_campaign(campaign_id)`：读 campaigns（只读，天然幂等）。
    - `get_report(campaign_id)`：返回 mock 消耗数据（只读）。
-   - `adjust_budget(campaign_id, delta)`：**高危写**。UPDATE budget + INSERT budget_audit（同事务）。注意：模型只传 delta 意图，上限校验（|delta| ≤ 预算 20%）在工具内硬编码——schema 闸门纪律。
+   - `adjust_budget(campaign_id, delta)`：**高危写**。UPDATE budget + INSERT budget_audit（同事务）。Agent 在模型调用前从当前受限命令语法生成单次、完整的预算调整授权；工具同时核对 campaign、完整 delta、单次使用与 `|delta| ≤ 当前预算 20%`，任何不一致均在写入前 fail closed。模型不能把超额目标拆成多次较小调用绕过边界。
 6. 任何异常：写 run_events(run.failed) + error_code 分类 + status=failed。
 
 ### 1.6 Sweeper（独立进程）

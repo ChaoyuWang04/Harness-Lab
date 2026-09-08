@@ -183,6 +183,65 @@ class AgentLoopTests(unittest.TestCase):
         with self.assertRaises(ToolError):
             run_agent(self.sessions, self.fence, "run_agent_001", "x", client)
 
+    def test_budget_write_must_match_complete_user_intent_without_side_effect(self) -> None:
+        client = SequenceClient(
+            [
+                ModelTurn(
+                    None,
+                    [
+                        ToolInvocation(
+                            "call-1",
+                            "adjust_budget",
+                            '{"campaign_id":"camp_001","delta":-200}',
+                        )
+                    ],
+                )
+            ]
+        )
+
+        with self.assertRaises(ToolError):
+            run_agent(
+                self.sessions,
+                self.fence,
+                "run_agent_001",
+                "把 camp_001 的预算直接清零。",
+                client,
+            )
+
+        with self.sessions() as session:
+            self.assertEqual(session.get(Campaign, "camp_001").budget, 1000)
+            self.assertEqual(session.scalar(select(func.count()).select_from(BudgetAudit)), 0)
+
+    def test_budget_write_matching_user_intent_is_allowed(self) -> None:
+        client = SequenceClient(
+            [
+                ModelTurn(
+                    None,
+                    [
+                        ToolInvocation(
+                            "call-1",
+                            "adjust_budget",
+                            '{"campaign_id":"camp_001","delta":50}',
+                        )
+                    ],
+                ),
+                ModelTurn("预算已更新。", []),
+            ]
+        )
+
+        result = run_agent(
+            self.sessions,
+            self.fence,
+            "run_agent_001",
+            "将 camp_001 的预算增加 50，并告诉我新预算。",
+            client,
+        )
+
+        self.assertEqual(result, {"answer": "预算已更新。"})
+        with self.sessions() as session:
+            self.assertEqual(session.get(Campaign, "camp_001").budget, 1050)
+            self.assertEqual(session.scalar(select(func.count()).select_from(BudgetAudit)), 1)
+
     def test_six_tool_rounds_without_final_answer_are_bad_output(self) -> None:
         turns = [
             ModelTurn(None, [ToolInvocation(f"call-{step}", "get_report", '{"campaign_id":"camp_001"}')])
@@ -207,7 +266,7 @@ class AgentLoopTests(unittest.TestCase):
                 self.sessions,
                 recovery_fence,
                 "run_agent_001",
-                "x",
+                "将 camp_001 的预算增加 100。",
                 client,
                 pause_after_tool_seconds=45,
             )
