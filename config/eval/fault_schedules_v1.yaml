@@ -1,0 +1,22 @@
+version: 1
+fault_schedules:
+  - schedule_id: env-01
+    decisions: ["429", "429", "200"]
+  - schedule_id: env-02
+    decisions: ["timeout", "timeout", "200"]
+  - schedule_id: env-03
+    decisions: ["503", "503", "200"]
+  - schedule_id: env-04
+    decisions: ["429", "503", "200"]
+  - schedule_id: env-05
+    decisions: ["timeout", "503", "200"]
+  - schedule_id: env-06
+    decisions: ["429", "429", "429", "429"]
+  - schedule_id: env-07
+    decisions: ["timeout", "timeout", "timeout", "timeout"]
+  - schedule_id: env-08
+    decisions: ["503", "503", "503", "503"]
+  - schedule_id: env-09
+    decisions: ["429", "timeout", "503", "429"]
+  - schedule_id: env-10
+    decisions: ["timeout", "503", "429", "timeout"]

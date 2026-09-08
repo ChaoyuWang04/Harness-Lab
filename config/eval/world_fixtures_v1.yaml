@@ -1,0 +1,19 @@
+version: 1
+world_fixtures:
+  - fixture_id: campaigns-v1
+    campaigns:
+      - id: camp_001
+        name: 秋季品牌推广
+        budget: 1000.0
+        spend_today: 420.0
+        status: active
+      - id: camp_002
+        name: 新客转化
+        budget: 2000.0
+        spend_today: 1250.0
+        status: active
+      - id: camp_003
+        name: 召回实验
+        budget: 500.0
+        spend_today: 100.0
+        status: paused

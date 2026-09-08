@@ -17,6 +17,7 @@ dependencies = [
   "opentelemetry-sdk>=1.44.0",
   "psycopg[binary]",
   "pydantic-settings",
+  "pyyaml>=6.0.3",
   "redis",
   "rq",
   "sentry-sdk[fastapi]<3",

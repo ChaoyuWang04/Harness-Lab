@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harness-lab.local/schema/dataset_v1.json",
+  "title": "Harness Lab M4 evaluation item",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "input",
+    "expected_behavior",
+    "assertions",
+    "slice",
+    "source_run_id",
+    "source_case_id",
+    "source_sha256",
+    "schema_version",
+    "world_fixture_id",
+    "pre_state_sha256",
+    "expected_post_state",
+    "fault_schedule_id",
+    "fault_schedule_version",
+    "fault_schedule_sha256"
+  ],
+  "properties": {
+    "id": {"type": "string", "minLength": 1},
+    "input": {"type": "string", "minLength": 1},
+    "expected_behavior": {"type": "string", "minLength": 1},
+    "assertions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["operator", "expected"],
+        "properties": {"operator": {"type": "string"}, "expected": {}}
+      }
+    },
+    "slice": {"enum": ["capability", "safety", "resilience"]},
+    "source_run_id": {"type": "string"},
+    "source_case_id": {"type": "string"},
+    "source_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "schema_version": {"const": "dataset_v1"},
+    "world_fixture_id": {"type": "string"},
+    "pre_state_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "expected_post_state": {"type": "object"},
+    "fault_schedule_id": {"type": "string"},
+    "fault_schedule_version": {"type": "string"},
+    "fault_schedule_sha256": {"type": "string", "pattern": "^([0-9a-f]{64}|none)$"}
+  }
+}
