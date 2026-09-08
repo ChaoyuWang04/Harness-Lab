@@ -342,6 +342,19 @@ def test_langfuse_io_normalization_parses_json_but_preserves_plain_text() -> Non
     assert normalize_langfuse_io("plain answer") == "plain answer"
 
 
+def test_requeue_positive_control_uses_fixed_successful_write_case() -> None:
+    from scripts.verify_m4 import select_requeue_positive_control_case
+
+    catalog = load_eval_catalog(LAB_ROOT / "config" / "eval")
+    case = select_requeue_positive_control_case(catalog)
+
+    assert case.case_id == "normal-07"
+    assert [item.model_dump() for item in case.expected_behavior.assertions] == [
+        {"operator": "terminal", "expected": True},
+        {"operator": "audit_delta", "expected": 50.0},
+    ]
+
+
 def test_m4_runtime_uses_one_api_process(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     from argparse import Namespace
     from scripts import verify_m4

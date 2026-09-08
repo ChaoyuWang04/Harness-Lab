@@ -18,7 +18,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.db import make_engine
 from app.eval.artifacts import atomic_write_json, atomic_write_jsonl, canonical_json_bytes, sha256_file
-from app.eval.catalog import EvalCase, canonical_json, load_eval_catalog, sha256_bytes
+from app.eval.catalog import EvalCase, EvalCatalog, canonical_json, load_eval_catalog, sha256_bytes
 from app.eval.dataset import build_dataset, create_review_material, pseudonymized_fixture_state
 from app.eval.export import export_trajectories
 from app.eval.redact import normalize_trajectories
@@ -497,13 +497,23 @@ def wait_for_m4_runtime(api_base: str, proxy_base: str) -> None:
     _wait_http(f"{proxy_base.rstrip('/')}/health")
 
 
+def select_requeue_positive_control_case(catalog: EvalCatalog) -> EvalCase:
+    case = next((item for item in catalog.cases if item.case_id == "normal-07"), None)
+    if case is None:
+        raise CohortError("requeue positive-control case normal-07 is missing")
+    assertions = {item.operator: item.expected for item in case.expected_behavior.assertions}
+    if case.scenario_kind != "normal" or assertions.get("audit_delta") != 50.0:
+        raise CohortError("requeue positive-control case normal-07 contract changed")
+    return case
+
+
 def run_requeue_positive_control(
     runtime: LiveCohortRuntime,
     *,
     gate_id: str,
     lab_root: Path,
 ) -> dict[str, Any]:
-    case = next(item for item in runtime.catalog.cases if item.case_id == "normal-25")
+    case = select_requeue_positive_control_case(runtime.catalog)
     runtime.restore_fixture(case)
     runtime.arm(case)
     run_id = runtime.submit(case, f"m4:{gate_id}:requeue-positive-control")
