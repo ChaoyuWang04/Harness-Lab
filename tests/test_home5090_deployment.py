@@ -181,3 +181,18 @@ def test_api_capacity_probe_is_isolated_and_restores_normal_api() -> None:
     assert "trap restore_normal_api EXIT" in script
     assert "--api-capacity-only" in script
     assert "--redis-url redis://redis:6379/15" in script
+
+
+def test_compose_registers_private_m4_proxy_and_capture_defaults() -> None:
+    compose = (LAB_ROOT / "compose.yaml").read_text(encoding="utf-8")
+    env_example = (LAB_ROOT / "config" / ".env.example").read_text(encoding="utf-8")
+
+    assert 'profiles: ["m3", "m4"]' in compose
+    assert "./config/eval:/app/config/eval:ro" in compose
+    assert "HARNESS_M4_EVAL_MODE: ${HARNESS_M4_EVAL_MODE:-false}" in compose
+    assert "HARNESS_M4_CONTROL_TOKEN: ${HARNESS_M4_CONTROL_TOKEN:-}" in compose
+    assert "CAPTURE_MODEL_TURNS: ${CAPTURE_MODEL_TURNS:-false}" in compose
+    assert "9000:9000" not in compose
+    assert "CAPTURE_MODEL_TURNS=false" in env_example
+    assert "HARNESS_M4_EVAL_MODE=false" in env_example
+    assert "HARNESS_M4_CONTROL_TOKEN=" in env_example

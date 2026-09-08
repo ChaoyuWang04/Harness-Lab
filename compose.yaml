@@ -23,7 +23,7 @@ services:
       retries: 30
 
   chaos-proxy:
-    profiles: ["m3"]
+    profiles: ["m3", "m4"]
     build: .
     command: uvicorn app.chaos.proxy:app --host 0.0.0.0 --port 9000
     environment:
@@ -34,6 +34,11 @@ services:
       CHAOS_5XX_RATE: ${CHAOS_5XX_RATE:-0}
       CHAOS_LATENCY_MS: ${CHAOS_LATENCY_MS:-0}
       CHAOS_TIMEOUT_SECONDS: ${CHAOS_TIMEOUT_SECONDS:-31}
+      HARNESS_M4_EVAL_MODE: ${HARNESS_M4_EVAL_MODE:-false}
+      HARNESS_M4_CONTROL_TOKEN: ${HARNESS_M4_CONTROL_TOKEN:-}
+      HARNESS_M4_CATALOG_PATH: /app/config/eval
+    volumes:
+      - ./config/eval:/app/config/eval:ro
     mem_limit: 256m
     restart: unless-stopped
     depends_on:
@@ -154,6 +159,7 @@ services:
       REDIS_URL: ${HARNESS_COMPOSE_REDIS_URL:-redis://redis:6379/0}
       LLM_BASE_URL: ${HARNESS_COMPOSE_LLM_BASE_URL:-http://ollama:11434/v1}
       HARNESS_TEST_PAUSE_AFTER_TOOL_SECONDS: ${HARNESS_TEST_PAUSE_AFTER_TOOL_SECONDS:-0}
+      CAPTURE_MODEL_TURNS: ${CAPTURE_MODEL_TURNS:-false}
       HARNESS_OBSERVABILITY_ENABLED: "true"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
     mem_limit: 1g

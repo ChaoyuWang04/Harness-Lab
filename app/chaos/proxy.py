@@ -9,10 +9,11 @@ from dataclasses import dataclass
 from typing import Any
 
 import httpx2
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import JSONResponse, Response
 
 from app.config import settings
+from app.eval.catalog import EvalCatalog, load_eval_catalog
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,6 +80,83 @@ class FaultSchedule:
             }
 
 
+class RegisteredFaultWindow:
+    def __init__(self, catalog: EvalCatalog) -> None:
+        self.catalog = catalog
+        self._case_id: str | None = None
+        self._decisions: list[str] = []
+        self._cursor = 0
+        self._registered_counts: Counter[str] = Counter()
+        self._post_schedule_model_attempts = 0
+        self._injection_window_closed = False
+        self._lock = threading.Lock()
+
+    def arm(self, case_id: str) -> dict[str, Any]:
+        with self._lock:
+            if self._case_id is not None:
+                raise RuntimeError("a fault schedule is already active")
+            case = next((item for item in self.catalog.cases if item.case_id == case_id), None)
+            if case is None or case.scenario_kind != "environment":
+                raise KeyError(case_id)
+            schedule = self.catalog.fault_schedules[case.fault_schedule_id]
+            self._case_id = case_id
+            self._decisions = list(schedule.decisions)
+            self._cursor = 0
+            self._registered_counts.clear()
+            self._post_schedule_model_attempts = 0
+            self._injection_window_closed = False
+            return self._snapshot_unlocked()
+
+    def decide(self) -> str:
+        with self._lock:
+            if self._case_id is None:
+                raise RuntimeError("no M4 fault schedule is armed")
+            if self._injection_window_closed:
+                self._post_schedule_model_attempts += 1
+                return "forward"
+            if self._cursor >= len(self._decisions):
+                return "exhausted"
+            decision = self._decisions[self._cursor]
+            self._cursor += 1
+            self._registered_counts[decision] += 1
+            if decision == "200":
+                self._injection_window_closed = True
+            return decision
+
+    def disarm(self, *, force: bool = False) -> dict[str, Any]:
+        with self._lock:
+            if self._case_id is None:
+                return self._snapshot_unlocked()
+            fully_consumed = self._cursor == len(self._decisions)
+            if not force and not (self._injection_window_closed or fully_consumed):
+                raise RuntimeError("fault schedule is only partially consumed")
+            previous = self._snapshot_unlocked()
+            self._case_id = None
+            self._decisions = []
+            self._cursor = 0
+            self._registered_counts.clear()
+            self._post_schedule_model_attempts = 0
+            self._injection_window_closed = False
+            return previous
+
+    def snapshot(self) -> dict[str, Any]:
+        with self._lock:
+            return self._snapshot_unlocked()
+
+    def _snapshot_unlocked(self) -> dict[str, Any]:
+        return {
+            "case_id": self._case_id,
+            "cursor": self._cursor,
+            "expected_length": len(self._decisions),
+            "registered_counts": {
+                status: self._registered_counts[status]
+                for status in ("200", "429", "timeout", "503")
+            },
+            "post_schedule_model_attempts": self._post_schedule_model_attempts,
+            "injection_window_closed": self._injection_window_closed,
+        }
+
+
 Forwarder = Callable[[dict[str, object]], Awaitable[tuple[int, dict[str, str], bytes]]]
 Sleeper = Callable[[float], Awaitable[None]]
 
@@ -88,9 +166,20 @@ def create_app(
     config: ChaosConfig | None = None,
     forward: Forwarder | None = None,
     sleep: Sleeper = asyncio.sleep,
+    m4_eval_mode: bool | None = None,
+    control_token: str | None = None,
+    eval_catalog: EvalCatalog | None = None,
 ) -> FastAPI:
     active = config or ChaosConfig.from_settings()
     schedule = FaultSchedule(active)
+    eval_mode = settings.harness_m4_eval_mode if m4_eval_mode is None else m4_eval_mode
+    token = settings.harness_m4_control_token if control_token is None else control_token
+    registered_window: RegisteredFaultWindow | None = None
+    if eval_mode:
+        if not token:
+            raise ValueError("M4 eval mode requires a non-empty control token")
+        catalog = eval_catalog or load_eval_catalog(settings.harness_m4_catalog_path)
+        registered_window = RegisteredFaultWindow(catalog)
 
     async def forward_upstream(body: dict[str, object]) -> tuple[int, dict[str, str], bytes]:
         async with httpx2.AsyncClient(trust_env=False, timeout=180) as client:
@@ -123,14 +212,59 @@ def create_app(
                 "5xx": active.rate_5xx,
             },
             "latency_ms": active.latency_ms,
+            "m4_eval_mode": eval_mode,
             **schedule.snapshot(),
         }
+
+    if registered_window is not None:
+
+        def authorize(x_harness_m4_token: str | None = Header(default=None)) -> None:
+            if x_harness_m4_token != token:
+                raise HTTPException(status_code=401, detail="unauthorized")
+
+        @application.post("/internal/eval/arm/{case_id}")
+        def arm_schedule(case_id: str, _: None = Depends(authorize)) -> dict[str, Any]:
+            try:
+                return registered_window.arm(case_id)
+            except KeyError as error:
+                raise HTTPException(status_code=404, detail="unknown case") from error
+            except RuntimeError as error:
+                raise HTTPException(status_code=409, detail=str(error)) from error
+
+        @application.get("/internal/eval/state")
+        def schedule_state(_: None = Depends(authorize)) -> dict[str, Any]:
+            return registered_window.snapshot()
+
+        @application.post("/internal/eval/disarm")
+        def disarm_schedule(
+            force: bool = False,
+            _: None = Depends(authorize),
+        ) -> dict[str, Any]:
+            try:
+                return registered_window.disarm(force=force)
+            except RuntimeError as error:
+                raise HTTPException(status_code=409, detail=str(error)) from error
 
     @application.post("/v1/chat/completions")
     async def chat_completions(body: dict[str, object]) -> Response:
         if active.latency_ms:
             await sleep(active.latency_ms / 1000)
-        decision = schedule.decide()
+        try:
+            decision = (
+                registered_window.decide()
+                if registered_window is not None
+                else schedule.decide()
+            )
+        except RuntimeError as error:
+            return JSONResponse(
+                {"error": {"message": str(error), "type": "schedule_error"}},
+                status_code=409,
+            )
+        if decision == "exhausted":
+            return JSONResponse(
+                {"error": {"message": "M4 registered schedule exhausted", "type": "schedule_error"}},
+                status_code=409,
+            )
         if decision == "429":
             return JSONResponse(
                 {"error": {"message": "M3 injected rate limit", "type": "rate_limit_error"}},
@@ -142,7 +276,7 @@ def create_app(
                 {"error": {"message": "M3 injected timeout", "type": "timeout"}},
                 status_code=504,
             )
-        if decision == "5xx":
+        if decision in {"5xx", "503"}:
             return JSONResponse(
                 {"error": {"message": "M3 injected provider failure", "type": "server_error"}},
                 status_code=503,

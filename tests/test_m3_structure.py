@@ -35,7 +35,7 @@ def test_compose_has_profile_gated_proxy_and_isolated_runtime_overrides() -> Non
     compose = (LAB_ROOT / "compose.yaml").read_text(encoding="utf-8")
     proxy = _service_block(compose, "chaos-proxy")
 
-    assert 'profiles: ["m3"]' in proxy
+    assert 'profiles: ["m3", "m4"]' in proxy
     assert "uvicorn app.chaos.proxy:app" in proxy
     assert "CHAOS_UPSTREAM_URL: http://ollama:11434" in proxy
     assert "mem_limit: 256m" in proxy

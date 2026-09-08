@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     chaos_timeout_seconds: float = Field(default=31, gt=0, le=180)
     chaos_dispatcher_crash_after_publish: bool = False
     chaos_dispatcher_marker: Path = Path("/var/lib/harness-chaos/dispatcher-after-publish.once")
+    harness_m4_eval_mode: bool = False
+    harness_m4_control_token: str = ""
+    harness_m4_catalog_path: Path = Path("/app/config/eval")
 
 
 settings = Settings()
