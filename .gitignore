@@ -10,8 +10,10 @@ data/**
 logs/**
 cache/**
 artifacts/**
+eval/reports/*.json
 
 !models/.gitkeep
 !logs/.gitkeep
 !cache/.gitkeep
 !artifacts/.gitkeep
+!eval/reports/.gitkeep
