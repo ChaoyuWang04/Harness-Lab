@@ -24,7 +24,9 @@ services:
 
   chaos-proxy:
     profiles: ["m3", "m4"]
-    build: .
+    build:
+      context: .
+      network: host
     command: uvicorn app.chaos.proxy:app --host 0.0.0.0 --port 9000
     environment:
       CHAOS_UPSTREAM_URL: http://ollama:11434
@@ -98,7 +100,9 @@ services:
       retries: 20
 
   migrate:
-    build: .
+    build:
+      context: .
+      network: host
     command: alembic upgrade head
     env_file: ./secrets/.env
     environment:
@@ -109,7 +113,9 @@ services:
         condition: service_healthy
 
   api:
-    build: .
+    build:
+      context: .
+      network: host
     command: uvicorn app.api.main:app --host 0.0.0.0 --port 8000 --workers 4
     env_file: ./secrets/.env
     environment:
@@ -129,7 +135,9 @@ services:
         condition: service_healthy
 
   dispatcher:
-    build: .
+    build:
+      context: .
+      network: host
     command: python -m app.dispatcher
     env_file: ./secrets/.env
     environment:
@@ -151,7 +159,9 @@ services:
         condition: service_healthy
 
   worker:
-    build: .
+    build:
+      context: .
+      network: host
     command: python -m app.worker
     env_file: ./secrets/.env
     environment:
@@ -171,7 +181,9 @@ services:
         condition: service_healthy
 
   sweeper:
-    build: .
+    build:
+      context: .
+      network: host
     command: python -m app.sweeper
     env_file: ./secrets/.env
     environment:

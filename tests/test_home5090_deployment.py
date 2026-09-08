@@ -220,6 +220,8 @@ def test_m4_wrapper_is_isolated_resumable_and_always_restores_normal_runtime() -
     assert "PACKAGE_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple" in script
     assert "ARG PACKAGE_INDEX_URL=https://pypi.org/simple" in dockerfile
     assert 'UV_DEFAULT_INDEX="$PACKAGE_INDEX_URL"' in dockerfile
+    assert script.count("--build-arg") == 1
+    assert (LAB_ROOT / "compose.yaml").read_text(encoding="utf-8").count("network: host") == 6
     assert "normal-database-url" in script
     assert "scripts/m4_watchdog.py" in script
     assert "--limit-bytes 4294967296" in script
