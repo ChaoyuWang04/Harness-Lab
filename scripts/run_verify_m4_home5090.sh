@@ -85,7 +85,7 @@ sys.stdout.write("\n")
     fi
     if [[ "${finalize_requested}" == "true" ]]; then
       docker run --rm -v "${lab_root}:${lab_root}" -w "${lab_root}" harness-lab-api \
-        python scripts/verify_m4.py finalize \
+        python -m scripts.verify_m4 finalize \
           --gate-id "${gate_id}" \
           --artifact-dir "${artifact_dir}" \
           --commit "${commit_sha}"
@@ -195,7 +195,7 @@ if docker run --rm --network harness-lab_default --env-file secrets/.env \
   -v /usr/bin/docker:/usr/bin/docker:ro \
   -v /usr/libexec/docker/cli-plugins/docker-compose:/usr/libexec/docker/cli-plugins/docker-compose:ro \
   -v "${lab_root}:${lab_root}" -w "${lab_root}" harness-lab-api \
-  python scripts/verify_m4.py "${mode}" \
+  python -m scripts.verify_m4 "${mode}" \
     --gate-id "${gate_id}" \
     --artifact-dir "${artifact_dir}" \
     --config-root "${lab_root}/config/eval" \

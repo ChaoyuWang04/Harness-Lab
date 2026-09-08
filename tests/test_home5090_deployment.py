@@ -233,7 +233,8 @@ def test_m4_wrapper_is_isolated_resumable_and_always_restores_normal_runtime() -
     assert "post_restore_inspect_" in script
     assert "post_restore_health_" in script
     assert "converge_normal_runtime" in script
-    assert 'python scripts/verify_m4.py finalize' in script
+    assert 'python -m scripts.verify_m4 finalize' in script
+    assert 'python -m scripts.verify_m4 "${mode}"' in script
     assert "down -v" not in script
     assert "DROP DATABASE" not in script
     assert "rm -rf" not in script
