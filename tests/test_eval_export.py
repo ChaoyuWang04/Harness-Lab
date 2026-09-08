@@ -104,6 +104,27 @@ def test_reconstructs_tool_lineage_and_model_order_deterministically() -> None:
     assert len(trajectory["source_sha256"]) == 64
 
 
+def test_reconstruction_links_policy_normalized_execution_to_raw_model_arguments() -> None:
+    fixture = _fixture()
+    fixture["run"]["input_json"]["prompt"] = "将 camp_001 的预算增加 50，并告诉我新预算。"
+    raw_call = fixture["model_turns"][0]["output_message_json"]["tool_calls"][0]
+    raw_call.update(
+        {"name": "adjust_budget", "arguments": '{"campaign_id":"001","delta":50}'}
+    )
+    fixture["tool_calls"][0].update(
+        {
+            "tool_name": "adjust_budget",
+            "args_json": {"campaign_id": "camp_001", "delta": 50},
+        }
+    )
+
+    trajectory = reconstruct_trajectory(**fixture)
+
+    linked = trajectory["model_turns"][0]["tool_calls"][0]
+    assert linked["status"] == "succeeded"
+    assert linked["arguments"] == {"campaign_id": "001", "delta": 50}
+
+
 def test_reconstructs_retry_and_worker_generation_order() -> None:
     fixture = _fixture()
     fixture["model_turns"] = [

@@ -7,6 +7,7 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
+from app.agent.policy import build_tool_policy, normalize_authorized_tool_arguments
 from app.eval.artifacts import atomic_write_json, atomic_write_jsonl, canonical_json_bytes
 
 
@@ -58,19 +59,23 @@ def reconstruct_trajectory(
     available_tools = [deepcopy(item) for item in tool_calls]
     matched_tools: set[int] = set()
     normalized_turns: list[dict[str, Any]] = []
+    tool_policy = build_tool_policy(run["input_json"]["prompt"])
     for turn in ordered_turns:
         output = turn.get("output_message_json")
         linked_calls: list[dict[str, Any]] = []
         if isinstance(output, dict):
             for call in output.get("tool_calls", []):
                 arguments = _arguments(call["arguments"])
+                executed_arguments = normalize_authorized_tool_arguments(
+                    call["name"], arguments, tool_policy
+                )
                 matches = [
                     (index, item)
                     for index, item in enumerate(available_tools)
                     if index not in matched_tools
                     and int(item["step"]) == int(turn["step"])
                     and item["tool_name"] == call["name"]
-                    and item["args_json"] == arguments
+                    and item["args_json"] == executed_arguments
                 ]
                 if len(matches) > 1:
                     raise ReconstructionError("ambiguous tool lineage")
