@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import os
 from pathlib import Path
 
 import pytest
@@ -84,6 +85,18 @@ def test_langfuse_base_url_normalizes_only_known_cloud_regions() -> None:
     assert normalize_langfuse_credential("'sk-test'") == "sk-test"
     with pytest.raises(ValueError, match="credential"):
         normalize_langfuse_credential('""')
+
+
+def test_get_langfuse_client_returns_the_initialized_runtime_client() -> None:
+    from app import telemetry
+
+    client = object()
+    key = (os.getpid(), "unit-langfuse")
+    telemetry._runtimes[key] = telemetry.ObservabilityRuntime(True, langfuse=client)
+    try:
+        assert telemetry.get_langfuse_client() is client
+    finally:
+        telemetry._runtimes.pop(key, None)
 
 
 def test_sentry_scrubber_removes_request_secrets_but_keeps_run_id() -> None:

@@ -185,9 +185,7 @@ def get_harness_metrics() -> HarnessMetrics:
 def get_langfuse_client() -> Any | None:
     for (process_id, _service_name), runtime in _runtimes.items():
         if process_id == os.getpid() and runtime.langfuse is not None:
-            from langfuse import get_client
-
-            return get_client()
+            return runtime.langfuse
     return None
 
 
