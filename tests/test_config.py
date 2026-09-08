@@ -15,3 +15,4 @@ def test_observability_is_safe_by_default_for_unit_tests() -> None:
     assert settings.otel_exporter_otlp_endpoint == "http://lgtm:4317"
     assert settings.otel_metric_export_interval_ms == 5000
     assert settings.otel_export_timeout_ms == 3000
+    assert settings.capture_model_turns is False

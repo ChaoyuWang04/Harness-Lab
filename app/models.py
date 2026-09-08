@@ -39,6 +39,35 @@ class RunEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
+class ModelTurnRecord(Base):
+    __tablename__ = "model_turns"
+    __table_args__ = (
+        UniqueConstraint(
+            "run_id",
+            "run_attempt",
+            "step",
+            "model_attempt",
+            name="uq_model_turn_identity",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("agent_runs.id", ondelete="CASCADE"), nullable=False
+    )
+    run_attempt: Mapped[int] = mapped_column(Integer, nullable=False)
+    step: Mapped[int] = mapped_column(Integer, nullable=False)
+    model_attempt: Mapped[int] = mapped_column(Integer, nullable=False)
+    prompt_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    input_messages_json: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    output_message_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    usage_json: Mapped[dict[str, int] | None] = mapped_column(JSONB)
+    error_code: Mapped[str | None] = mapped_column(String(32))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class OutboxJob(Base):
     __tablename__ = "outbox_jobs"
     __table_args__ = (

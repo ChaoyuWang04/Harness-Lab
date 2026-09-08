@@ -13,6 +13,7 @@ from app.agent.llm import ChatClient, ModelTurn
 from app.agent.tools import TOOL_SCHEMAS, ToolError, execute_tool_with_outcome
 from app.config import settings
 from app.events import append_event
+from app.eval.model_turns import record_model_turn
 from app.fencing import WorkerFence
 from app.telemetry import get_harness_metrics, model_observation, update_model_observation
 
@@ -37,6 +38,16 @@ def _assistant_message(turn: ModelTurn) -> dict[str, Any]:
             for call in turn.tool_calls
         ]
     return message
+
+
+def _recorded_output(turn: ModelTurn) -> dict[str, Any]:
+    return {
+        "content": turn.content,
+        "tool_calls": [
+            {"id": call.id, "name": call.name, "arguments": call.arguments}
+            for call in turn.tool_calls
+        ],
+    }
 
 
 def run_agent(
@@ -97,24 +108,62 @@ def run_agent(
                 retry_code, metric_status = "MODEL_429", "429"
                 get_harness_metrics().record_model_call(metric_status)
                 error = True
+                capture_error_code = retry_code
             except APITimeoutError as exc:
                 last_error = exc
                 retry_code, metric_status = "MODEL_TIMEOUT", "timeout"
                 get_harness_metrics().record_model_call(metric_status)
                 error = True
+                capture_error_code = retry_code
             except APIStatusError as exc:
                 last_error = exc
                 get_harness_metrics().record_model_call(metric_status)
                 if exc.status_code < 500:
+                    record_model_turn(
+                        session_factory,
+                        fence,
+                        run_id,
+                        step=step,
+                        model_attempt=model_attempt,
+                        input_messages=messages,
+                        output_message=None,
+                        usage=None,
+                        error_code="MODEL_INTERNAL",
+                    )
                     raise
                 retry_code = "MODEL_5XX"
                 error = True
+                capture_error_code = retry_code
             except Exception:
                 get_harness_metrics().record_model_call(metric_status)
+                record_model_turn(
+                    session_factory,
+                    fence,
+                    run_id,
+                    step=step,
+                    model_attempt=model_attempt,
+                    input_messages=messages,
+                    output_message=None,
+                    usage=None,
+                    error_code="MODEL_INTERNAL",
+                )
                 raise
             else:
                 get_harness_metrics().record_model_call("200")
                 error = False
+                capture_error_code = None
+
+            record_model_turn(
+                session_factory,
+                fence,
+                run_id,
+                step=step,
+                model_attempt=model_attempt,
+                input_messages=messages,
+                output_message=None if error else _recorded_output(turn),
+                usage=None if error else turn.usage,
+                error_code=capture_error_code,
+            )
 
             if not error:
                 break

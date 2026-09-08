@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     lease_seconds: int = Field(default=30, ge=5)
     max_attempts: int = Field(default=3, ge=1)
     harness_test_pause_after_tool_seconds: int = Field(default=0, ge=0, le=120)
+    capture_model_turns: bool = False
     harness_observability_enabled: bool = False
     otel_exporter_otlp_endpoint: str = "http://lgtm:4317"
     otel_metric_export_interval_ms: int = Field(default=5000, ge=1000)

@@ -15,7 +15,7 @@ LAB_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(LAB_ROOT))
 
 from app.config import Settings  # noqa: E402
-from app.models import Base, Campaign, OutboxJob  # noqa: E402
+from app.models import Base, Campaign, ModelTurnRecord, OutboxJob  # noqa: E402
 
 
 class SchemaMetadataTests(unittest.TestCase):
@@ -30,6 +30,7 @@ class SchemaMetadataTests(unittest.TestCase):
                 "idempotency_keys",
                 "campaigns",
                 "budget_audit",
+                "model_turns",
             },
         )
 
@@ -44,11 +45,21 @@ class SchemaMetadataTests(unittest.TestCase):
         }
         self.assertIn(("tool_call_key",), unique_columns)
 
+        model_turn_identity = {
+            tuple(column.name for column in constraint.columns)
+            for constraint in ModelTurnRecord.__table__.constraints
+            if constraint.__class__.__name__ == "UniqueConstraint"
+        }
+        self.assertEqual(
+            model_turn_identity,
+            {("run_id", "run_attempt", "step", "model_attempt")},
+        )
+
         ddl = str(CreateIndex(next(iter(OutboxJob.__table__.indexes))).compile(dialect=postgresql.dialect()))
         self.assertIn("WHERE status = 'pending'", ddl)
 
     def test_timestamps_are_timezone_aware(self) -> None:
-        for table_name in ("agent_runs", "run_events", "outbox_jobs", "tool_calls", "budget_audit"):
+        for table_name in ("agent_runs", "run_events", "outbox_jobs", "tool_calls", "budget_audit", "model_turns"):
             column = Base.metadata.tables[table_name].c.created_at
             self.assertTrue(column.type.timezone, table_name)
 

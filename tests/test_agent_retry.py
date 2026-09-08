@@ -68,11 +68,17 @@ def _patch_runtime(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr("app.agent.loop.model_observation", observation)
     monkeypatch.setattr("app.agent.loop.update_model_observation", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("app.agent.loop.get_harness_metrics", lambda: metrics)
-    return events, observations, metrics
+    model_turns: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "app.agent.loop.record_model_turn",
+        lambda *_args, **kwargs: model_turns.append(kwargs) or True,
+    )
+    monkeypatch.setattr("app.agent.loop.settings.capture_model_turns", True)
+    return events, observations, metrics, model_turns
 
 
 def test_rate_limit_retries_three_times_with_exponential_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
-    events, observations, metrics = _patch_runtime(monkeypatch)
+    events, observations, metrics, model_turns = _patch_runtime(monkeypatch)
     sleeps: list[float] = []
     client = RetryClient([_rate_limit(), _rate_limit(), ModelTurn("ok", [], {"total": 1})])
 
@@ -101,10 +107,13 @@ def test_rate_limit_retries_three_times_with_exponential_backoff(monkeypatch: py
         "MODEL_429",
         "MODEL_429",
     ]
+    assert [item["model_attempt"] for item in model_turns] == [0, 1, 2]
+    assert [item["error_code"] for item in model_turns] == ["MODEL_429", "MODEL_429", None]
+    assert model_turns[-1]["output_message"] == {"content": "ok", "tool_calls": []}
 
 
 def test_timeout_stops_after_three_retries(monkeypatch: pytest.MonkeyPatch) -> None:
-    events, observations, metrics = _patch_runtime(monkeypatch)
+    events, observations, metrics, model_turns = _patch_runtime(monkeypatch)
     request = httpx2.Request("POST", "http://model.invalid/v1/chat/completions")
     client = RetryClient([APITimeoutError(request) for _ in range(4)])
 
@@ -124,3 +133,4 @@ def test_timeout_stops_after_three_retries(monkeypatch: pytest.MonkeyPatch) -> N
     assert len(observations) == 4
     assert metrics.statuses == ["timeout"] * 4
     assert len([event for event, _ in events if event == "step.model_retry"]) == 3
+    assert [item["error_code"] for item in model_turns] == ["MODEL_TIMEOUT"] * 4

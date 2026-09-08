@@ -17,8 +17,18 @@ sys.path.insert(0, str(LAB_ROOT))
 from app.agent.llm import ModelTurn, OllamaClient, ToolInvocation  # noqa: E402
 from app.agent.loop import BadOutput, run_agent  # noqa: E402
 from app.agent.tools import ToolError  # noqa: E402
+from app.config import settings  # noqa: E402
 from app.fencing import WorkerFence  # noqa: E402
-from app.models import AgentRun, BudgetAudit, Campaign, IdempotencyKey, OutboxJob, RunEvent, ToolCall  # noqa: E402
+from app.models import (  # noqa: E402
+    AgentRun,
+    BudgetAudit,
+    Campaign,
+    IdempotencyKey,
+    ModelTurnRecord,
+    OutboxJob,
+    RunEvent,
+    ToolCall,
+)
 
 
 class SequenceClient:
@@ -52,6 +62,7 @@ class AgentLoopTests(unittest.TestCase):
         with self.sessions.begin() as session:
             session.execute(delete(BudgetAudit))
             session.execute(delete(ToolCall))
+            session.execute(delete(ModelTurnRecord))
             session.execute(delete(IdempotencyKey))
             session.execute(delete(OutboxJob))
             session.execute(delete(RunEvent))
@@ -93,6 +104,42 @@ class AgentLoopTests(unittest.TestCase):
         )
         self.assertEqual(len(client.requests), 2)
         self.assertEqual(client.requests[1][-1]["role"], "tool")
+
+    def test_capture_records_tool_and_final_turns_without_changing_public_events(self) -> None:
+        client = SequenceClient(
+            [
+                ModelTurn(
+                    content=None,
+                    tool_calls=[
+                        ToolInvocation("call-1", "get_report", '{"campaign_id":"camp_001"}')
+                    ],
+                    usage={"total": 10},
+                ),
+                ModelTurn(content="done", tool_calls=[], usage={"total": 5}),
+            ]
+        )
+
+        with mock.patch.object(settings, "capture_model_turns", True):
+            run_agent(self.sessions, self.fence, "run_agent_001", "诊断 camp_001", client)
+
+        with self.sessions() as session:
+            turns = session.scalars(
+                select(ModelTurnRecord)
+                .where(ModelTurnRecord.run_id == "run_agent_001")
+                .order_by(ModelTurnRecord.run_attempt, ModelTurnRecord.step, ModelTurnRecord.model_attempt)
+            ).all()
+            event_types = session.scalars(
+                select(RunEvent.type)
+                .where(RunEvent.run_id == "run_agent_001")
+                .order_by(RunEvent.sequence)
+            ).all()
+        self.assertEqual([(item.run_attempt, item.step, item.model_attempt) for item in turns], [(1, 1, 0), (1, 2, 0)])
+        self.assertEqual(turns[0].output_message_json["tool_calls"][0]["id"], "call-1")
+        self.assertEqual(turns[1].output_message_json["content"], "done")
+        self.assertEqual(
+            event_types,
+            ["step.model_call", "step.tool_call", "step.tool_result", "step.model_call"],
+        )
 
     def test_malformed_tool_arguments_are_bad_output(self) -> None:
         client = SequenceClient([ModelTurn(None, [ToolInvocation("call-1", "get_report", "not-json")])])
