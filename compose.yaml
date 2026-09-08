@@ -116,12 +116,13 @@ services:
     build:
       context: .
       network: host
-    command: uvicorn app.api.main:app --host 0.0.0.0 --port 8000 --workers 4
+    command: ["sh", "-c", "exec uvicorn app.api.main:app --host 0.0.0.0 --port 8000 --workers $${HARNESS_API_WORKERS}"]
     env_file: ./secrets/.env
     environment:
       DATABASE_URL: ${HARNESS_COMPOSE_DATABASE_URL:-postgresql+psycopg://postgres:harness@postgres:5432/harness}
       REDIS_URL: ${HARNESS_COMPOSE_REDIS_URL:-redis://redis:6379/0}
       LLM_BASE_URL: ${HARNESS_COMPOSE_LLM_BASE_URL:-http://ollama:11434/v1}
+      HARNESS_API_WORKERS: ${HARNESS_API_WORKERS:-4}
       HARNESS_OBSERVABILITY_ENABLED: "true"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
     ports:

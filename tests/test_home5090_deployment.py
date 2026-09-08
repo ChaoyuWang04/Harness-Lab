@@ -216,6 +216,8 @@ def test_m4_wrapper_is_isolated_resumable_and_always_restores_normal_runtime() -
     assert "pre_gate_runtime.json" in script
     assert "CAPTURE_MODEL_TURNS=true" in script
     assert "CAPTURE_MODEL_TURNS=false" in script
+    assert "HARNESS_API_WORKERS=1" in script
+    assert "HARNESS_API_WORKERS=4" in script
     assert "--build-arg" in script
     assert "PACKAGE_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple" in script
     assert "ARG PACKAGE_INDEX_URL=https://pypi.org/simple" in dockerfile
@@ -227,6 +229,9 @@ def test_m4_wrapper_is_isolated_resumable_and_always_restores_normal_runtime() -
     assert 'python -m pytest -q "${lab_root}/tests"' in script
     assert script.count("--build-arg") == 2
     assert (LAB_ROOT / "compose.yaml").read_text(encoding="utf-8").count("network: host") == 6
+    assert 'HARNESS_API_WORKERS: ${HARNESS_API_WORKERS:-4}' in (
+        LAB_ROOT / "compose.yaml"
+    ).read_text(encoding="utf-8")
     assert "normal-database-url" in script
     assert "scripts/m4_watchdog.py" in script
     assert "--limit-bytes 4294967296" in script

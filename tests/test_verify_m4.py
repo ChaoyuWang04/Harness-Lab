@@ -255,6 +255,7 @@ def test_finalize_requires_normal_runtime_restoration_before_pass(tmp_path: Path
                 "REDIS_URL": "redis://redis:6379/0",
                 "LLM_BASE_URL": "http://ollama:11434/v1",
                 "CAPTURE_MODEL_TURNS": "false",
+                **({"HARNESS_API_WORKERS": "4"} if service == "api" else {}),
             },
             "running": True,
         }
@@ -303,3 +304,28 @@ def test_new_gate_waits_for_api_and_proxy_health(monkeypatch: pytest.MonkeyPatch
     verify_m4.wait_for_m4_runtime("http://api:8000", "http://chaos-proxy:9000")
 
     assert seen == ["http://api:8000/health", "http://chaos-proxy:9000/health"]
+
+
+def test_m4_runtime_uses_one_api_process(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    from argparse import Namespace
+    from scripts import verify_m4
+
+    captured: dict[str, str] = {}
+
+    def fake_compose(_root, *_args, environment=None):
+        captured.update(environment or {})
+
+    monkeypatch.setattr(verify_m4, "_docker_compose", fake_compose)
+    monkeypatch.setattr(verify_m4, "_wait_http", lambda _url: None)
+    verify_m4._start_m4_runtime(
+        Namespace(
+            control_token="token",
+            lab_root=tmp_path,
+            api_base="http://api:8000",
+            proxy_base="http://proxy:9000",
+        ),
+        database_url="db",
+        redis_url="redis",
+    )
+
+    assert captured["HARNESS_API_WORKERS"] == "1"

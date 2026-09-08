@@ -43,6 +43,7 @@ converge_normal_runtime() {
   HARNESS_COMPOSE_DATABASE_URL="postgresql+psycopg://postgres:harness@postgres:5432/harness" \
   HARNESS_COMPOSE_REDIS_URL="redis://redis:6379/0" \
   HARNESS_COMPOSE_LLM_BASE_URL="http://ollama:11434/v1" \
+  HARNESS_API_WORKERS=4 \
   CAPTURE_MODEL_TURNS=false \
   HARNESS_TEST_PAUSE_AFTER_TOOL_SECONDS=0 \
     docker compose --env-file secrets/.env up -d --force-recreate --scale worker=1 api dispatcher worker sweeper
@@ -70,7 +71,7 @@ restore_normal_runtime() {
     if [[ -n "${container_ids}" ]]; then
       docker inspect ${container_ids} | python3 -c '
 import json, sys
-allowed = {"DATABASE_URL", "REDIS_URL", "LLM_BASE_URL", "CAPTURE_MODEL_TURNS"}
+allowed = {"DATABASE_URL", "REDIS_URL", "LLM_BASE_URL", "CAPTURE_MODEL_TURNS", "HARNESS_API_WORKERS"}
 result = []
 for item in json.load(sys.stdin):
     environment = dict(value.split("=", 1) for value in item["Config"].get("Env", []) if "=" in value)
@@ -183,6 +184,7 @@ commit_sha="$(git rev-parse HEAD)"
 HARNESS_COMPOSE_DATABASE_URL="${generation_url}" \
 HARNESS_COMPOSE_REDIS_URL="${generation_redis}" \
 HARNESS_COMPOSE_LLM_BASE_URL="http://chaos-proxy:9000/v1" \
+HARNESS_API_WORKERS=1 \
 HARNESS_M4_EVAL_MODE=true \
 HARNESS_M4_CONTROL_TOKEN="${control_token}" \
 CAPTURE_MODEL_TURNS=true \

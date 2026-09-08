@@ -121,6 +121,8 @@ def finalize_after_restore(*, artifact_dir: Path, gate_id: str, commit: str) -> 
                 raise SystemExit(f"normal runtime {key} mismatch")
         if container.get("service") == "worker" and environment.get("CAPTURE_MODEL_TURNS") != "false":
             raise SystemExit("normal worker capture was not disabled")
+        if container.get("service") == "api" and environment.get("HARNESS_API_WORKERS") != "4":
+            raise SystemExit("normal API worker count was not restored")
     criteria = [
         ({**item, "status": "PASS", "observed": {"services": sorted(expected_services), "worker_count": 1}}
          if item["name"] == "normal_runtime_restored" else item)
@@ -557,6 +559,7 @@ def run_capture_off_control(args: argparse.Namespace) -> dict[str, Any]:
             "HARNESS_COMPOSE_DATABASE_URL": args.test_database_url,
             "HARNESS_COMPOSE_REDIS_URL": args.test_redis_url,
             "HARNESS_COMPOSE_LLM_BASE_URL": "http://ollama:11434/v1",
+            "HARNESS_API_WORKERS": "4",
             "CAPTURE_MODEL_TURNS": "false",
             "HARNESS_TEST_PAUSE_AFTER_TOOL_SECONDS": "0",
         }
@@ -784,6 +787,7 @@ def _start_m4_runtime(
             "HARNESS_COMPOSE_DATABASE_URL": database_url,
             "HARNESS_COMPOSE_REDIS_URL": redis_url,
             "HARNESS_COMPOSE_LLM_BASE_URL": "http://chaos-proxy:9000/v1",
+            "HARNESS_API_WORKERS": "1",
             "HARNESS_M4_EVAL_MODE": "true",
             "HARNESS_M4_CONTROL_TOKEN": args.control_token,
             "CAPTURE_MODEL_TURNS": "true",
