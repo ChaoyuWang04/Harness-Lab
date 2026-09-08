@@ -223,7 +223,7 @@ def test_m4_wrapper_is_isolated_resumable_and_always_restores_normal_runtime() -
     assert "ARG INSTALL_DEV=false" in dockerfile
     assert "INSTALL_DEV=true" in script
     assert "python3 scripts/m4_watchdog.py" in script
-    assert '"${lab_root}:${lab_root}:ro"' in script
+    assert '"${lab_root}:${lab_root}"' in script
     assert 'python -m pytest -q "${lab_root}/tests"' in script
     assert script.count("--build-arg") == 2
     assert (LAB_ROOT / "compose.yaml").read_text(encoding="utf-8").count("network: host") == 6

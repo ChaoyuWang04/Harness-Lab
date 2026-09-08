@@ -173,7 +173,7 @@ if [[ "${mode}" == "new" ]]; then
   docker run --rm --network harness-lab_default --env-file secrets/.env \
     -e TEST_DATABASE_URL="${test_url}" \
     -e TEST_REDIS_URL="${test_redis}" \
-    -v "${lab_root}:${lab_root}:ro" \
+    -v "${lab_root}:${lab_root}" \
     -w "${lab_root}" \
     harness-lab-api python -m pytest -q "${lab_root}/tests"
 fi

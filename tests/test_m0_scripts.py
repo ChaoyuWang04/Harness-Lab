@@ -4,6 +4,7 @@ import json
 import importlib.util
 import os
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -40,7 +41,7 @@ class ToolCallValidatorTests(unittest.TestCase):
             payload_path = Path(handle.name)
         try:
             return subprocess.run(
-                [str(LAB_ROOT / ".venv" / "bin" / "python"), str(VALIDATOR), "--validate-file", str(payload_path)],
+                [sys.executable, str(VALIDATOR), "--validate-file", str(payload_path)],
                 check=False,
                 capture_output=True,
                 text=True,
