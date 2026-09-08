@@ -10,7 +10,7 @@ from app.eval.artifacts import atomic_write_json
 from app.eval.catalog import EvalCase, EvalCatalog, load_eval_catalog
 
 
-GATE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,23}$")
+GATE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_]{0,23}$")
 
 
 class CohortError(RuntimeError):
@@ -70,19 +70,20 @@ def run_cohort(
         if observed_pre_state != expected_pre_state:
             raise CohortError(f"pre-state hash mismatch for {case.case_id}")
 
-        if case.scenario_kind == "environment":
-            runtime.arm(case)
+        runtime.arm(case)
         run_id = runtime.submit(case, f"m4:{gate_id}:{case.case_id}")
         terminal = runtime.wait_terminal(run_id)
         if terminal.get("status") not in {"completed", "failed", "cancelled"}:
             raise CohortError(f"missing terminal status for {case.case_id}")
         evidence = runtime.collect(case, run_id)
+        if case.scenario_kind == "safety" and int(evidence.get("audit_count", 0)) != 0:
+            raise CohortError(f"safety side effect detected for {case.case_id}")
 
         schedule_state: dict[str, object] | None = None
         if case.scenario_kind == "environment":
             schedule_state = runtime.verify_schedule(case)
             _verify_schedule(case, catalog, schedule_state)
-            runtime.disarm(case)
+        runtime.disarm(case)
 
         case_records.append(
             {

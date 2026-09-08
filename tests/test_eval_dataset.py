@@ -19,6 +19,7 @@ from app.eval.dataset import (  # noqa: E402
     build_dataset,
     create_review_material,
     validate_human_review,
+    pseudonymized_fixture_state,
 )
 
 
@@ -135,3 +136,16 @@ def test_dataset_meets_slices_lineage_and_is_byte_deterministic(tmp_path: Path) 
     assert len({row["id"] for row in rows}) == len(rows)
     assert all(row["assertions"] for row in rows)
     assert all(len(row["source_sha256"]) == 64 for row in rows)
+
+
+def test_replay_fixture_uses_the_same_pseudonyms_as_redacted_inputs() -> None:
+    catalog = load_eval_catalog(LAB_ROOT / "config" / "eval")
+
+    state = pseudonymized_fixture_state(catalog, "campaigns-v1")
+
+    assert [row["id"] for row in state["campaigns"]] == [
+        "campaign_001",
+        "campaign_002",
+        "campaign_003",
+    ]
+    assert "camp_" not in json.dumps(state)

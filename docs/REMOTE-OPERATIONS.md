@@ -71,6 +71,55 @@ Docker CLI：
 `artifacts/m2/gate_m2.json`。运行前必须完成 Sentry issue 页面证据并确认没有其他 run producer；
 它只允许创建计划中登记的唯一 30-run cohort。
 
+## M4 数据回流 Gate
+
+M4 只在 `home-5090` 运行。Mac 负责在 `main` 上按命名路径提交并推送；服务器 checkout
+必须保持 clean，只执行 `git pull --ff-only`，不得从服务器提交。开跑前：
+
+```bash
+# Mac
+git status --short
+git diff --check
+git push origin main
+
+# home-5090
+cd /home/samwang/code/projects/Harness-Lab
+git status --short
+git pull --ff-only
+./scripts/run_verify_m4_home5090.sh new gate1
+```
+
+`new` 的预期首次终态是退出码 3 和 `PENDING_HUMAN`，不是故障。50 条 raw 轨迹只保存在：
+
+```text
+/home/samwang/code/projects/Harness-Lab/artifacts/m4/gate1/
+```
+
+只允许把下面两个已经脱敏的文件复制到 Mac 同名 ignored 目录，并核对
+`review_sample.json` 内登记的 SHA：
+
+```text
+artifacts/m4/gate1/attribution/review_sample.json
+artifacts/m4/gate1/attribution/human_review.json
+```
+
+人工完成 15 条判定并保持 `sample_sha256` 不变后，将 `human_review.json` 传回原目录，再运行：
+
+```bash
+./scripts/run_verify_m4_home5090.sh resume gate1
+```
+
+若 SSH 断线、shell 被强制结束或主机重启，先恢复普通运行面：
+
+```bash
+./scripts/run_verify_m4_home5090.sh --restore-only gate1
+```
+
+最终 PASS 后只把 `eval/dataset_v1.jsonl`、`eval/dataset_v1.manifest.json` 和可选脱敏报告
+复制回 Mac，并逐个核对 remote manifest SHA。`raw/`、数据库、Redis 状态、控制 token 和
+运行时日志不得离开 `home-5090`，也不得进入 Git。API/UI 与 Grafana 仍使用既有 SSH tunnel；
+M4 proxy、PostgreSQL、Redis 和 Ollama 没有宿主端口。
+
 ## 重启与停止
 
 常驻服务使用 `restart: unless-stopped`。主机或 Docker 重启后运行

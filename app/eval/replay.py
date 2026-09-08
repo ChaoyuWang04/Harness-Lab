@@ -6,6 +6,8 @@ from typing import Any, Protocol
 
 from app.eval.artifacts import canonical_json_bytes
 from app.eval.catalog import EvalCatalog
+from app.eval.catalog import canonical_json, sha256_bytes
+from app.eval.dataset import pseudonymized_fixture_state
 
 
 class ReplayError(RuntimeError):
@@ -161,15 +163,17 @@ def run_live_replay(
     outputs: dict[str, dict[str, Any]] = {}
     run_ids: list[str] = []
     for item in dataset:
-        fixture = catalog.world_fixtures[item["world_fixture_id"]]
-        if runtime.restore_fixture(item) != fixture.pre_state_sha256:
+        fixture_sha = sha256_bytes(
+            canonical_json(pseudonymized_fixture_state(catalog, item["world_fixture_id"]))
+        )
+        if runtime.restore_fixture(item) != fixture_sha:
             raise ReplayError(f"pre-state mismatch for {item['id']}")
         schedule_id = item["fault_schedule_id"]
         if schedule_id != "none":
             schedule = catalog.fault_schedules.get(schedule_id)
             if schedule is None or schedule.sha256 != item["fault_schedule_sha256"]:
                 raise ReplayError(f"fault schedule mismatch for {item['id']}")
-            runtime.arm(item)
+        runtime.arm(item)
         run_id = runtime.submit(
             item,
             f"m4-replay:{gate_id}:{replay_execution_id}:{item['source_case_id']}",
@@ -180,7 +184,7 @@ def run_live_replay(
         outputs[item["id"]] = runtime.wait_and_collect(item, run_id)
         if schedule_id != "none":
             runtime.verify_schedule(item)
-            runtime.disarm(item)
+        runtime.disarm(item)
     if canonical_json_bytes(dataset) != before:
         raise ReplayError("live replay modified the dataset")
     report = score_dataset(dataset, outputs)
@@ -191,6 +195,7 @@ def run_live_replay(
             "database_name": database_name,
             "redis_db": redis_db,
             "run_ids": run_ids,
+            "recorded_outputs": outputs,
         }
     )
     return report

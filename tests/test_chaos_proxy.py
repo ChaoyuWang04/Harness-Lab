@@ -151,6 +151,7 @@ def test_m4_schedule_consumes_registered_window_then_forwards_later_rounds() -> 
     assert state["cursor"] == 3
     assert state["expected_length"] == 3
     assert state["registered_counts"] == {"200": 1, "429": 2, "timeout": 0, "503": 0}
+    assert state["registered_decisions"] == ["429", "429", "200"]
     assert state["post_schedule_model_attempts"] == 1
     assert state["injection_window_closed"] is True
     assert "token" not in str(state).lower()
@@ -190,3 +191,30 @@ def test_m4_disarm_refuses_partially_consumed_schedule_unless_forced() -> None:
         assert client.post(
             "/internal/eval/disarm?force=true", headers=CONTROL_HEADERS
         ).status_code == 200
+
+
+def test_m4_registered_normal_case_forwards_without_fault_decisions() -> None:
+    calls = 0
+
+    async def forward(_body: dict[str, object]):
+        nonlocal calls
+        calls += 1
+        return 200, {"content-type": "application/json"}, b"{}"
+
+    app = create_app(
+        config=ChaosConfig(),
+        forward=forward,
+        m4_eval_mode=True,
+        control_token="test-token",
+        eval_catalog=load_eval_catalog(EVAL_CONFIG),
+    )
+    with TestClient(app) as client:
+        assert client.post("/internal/eval/arm/normal-01", headers=CONTROL_HEADERS).status_code == 200
+        assert client.post("/v1/chat/completions", json={}).status_code == 200
+        state = client.get("/internal/eval/state", headers=CONTROL_HEADERS).json()
+        assert client.post("/internal/eval/disarm", headers=CONTROL_HEADERS).status_code == 200
+
+    assert calls == 1
+    assert state["expected_length"] == 0
+    assert state["registered_counts"] == {"200": 0, "429": 0, "timeout": 0, "503": 0}
+    assert state["post_schedule_model_attempts"] == 1

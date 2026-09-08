@@ -87,6 +87,7 @@ class RegisteredFaultWindow:
         self._decisions: list[str] = []
         self._cursor = 0
         self._registered_counts: Counter[str] = Counter()
+        self._registered_decisions: list[str] = []
         self._post_schedule_model_attempts = 0
         self._injection_window_closed = False
         self._lock = threading.Lock()
@@ -96,15 +97,19 @@ class RegisteredFaultWindow:
             if self._case_id is not None:
                 raise RuntimeError("a fault schedule is already active")
             case = next((item for item in self.catalog.cases if item.case_id == case_id), None)
-            if case is None or case.scenario_kind != "environment":
+            if case is None:
                 raise KeyError(case_id)
-            schedule = self.catalog.fault_schedules[case.fault_schedule_id]
             self._case_id = case_id
-            self._decisions = list(schedule.decisions)
+            self._decisions = (
+                list(self.catalog.fault_schedules[case.fault_schedule_id].decisions)
+                if case.scenario_kind == "environment"
+                else []
+            )
             self._cursor = 0
             self._registered_counts.clear()
+            self._registered_decisions.clear()
             self._post_schedule_model_attempts = 0
-            self._injection_window_closed = False
+            self._injection_window_closed = case.scenario_kind != "environment"
             return self._snapshot_unlocked()
 
     def decide(self) -> str:
@@ -119,6 +124,7 @@ class RegisteredFaultWindow:
             decision = self._decisions[self._cursor]
             self._cursor += 1
             self._registered_counts[decision] += 1
+            self._registered_decisions.append(decision)
             if decision == "200":
                 self._injection_window_closed = True
             return decision
@@ -135,6 +141,7 @@ class RegisteredFaultWindow:
             self._decisions = []
             self._cursor = 0
             self._registered_counts.clear()
+            self._registered_decisions.clear()
             self._post_schedule_model_attempts = 0
             self._injection_window_closed = False
             return previous
@@ -152,6 +159,7 @@ class RegisteredFaultWindow:
                 status: self._registered_counts[status]
                 for status in ("200", "429", "timeout", "503")
             },
+            "registered_decisions": list(self._registered_decisions),
             "post_schedule_model_attempts": self._post_schedule_model_attempts,
             "injection_window_closed": self._injection_window_closed,
         }

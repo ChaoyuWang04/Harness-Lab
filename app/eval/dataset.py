@@ -3,7 +3,9 @@ from __future__ import annotations
 import hashlib
 import json
 import random
+import re
 from collections import Counter
+from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -18,6 +20,22 @@ from app.eval.redact import REDACTOR_VERSION
 
 class HumanReviewError(RuntimeError):
     pass
+
+
+def pseudonymized_fixture_state(catalog: EvalCatalog, fixture_id: str) -> dict[str, Any]:
+    fixture = catalog.world_fixtures[fixture_id]
+    return {
+        "campaigns": [
+            {
+                **campaign.model_dump(mode="json"),
+                "id": f"campaign_{index:03d}",
+                "name": f"Campaign {index:03d}",
+            }
+            for index, campaign in enumerate(
+                sorted(fixture.campaigns, key=lambda item: item.id), start=1
+            )
+        ]
+    }
 
 
 def create_review_material(
@@ -110,14 +128,22 @@ def _dataset_item(
     slice_name: str,
 ) -> dict[str, Any]:
     case = next(case for case in catalog.cases if case.case_id == item["case_id"])
-    fixture = catalog.world_fixtures[case.world_fixture_id]
+    fixture_state = pseudonymized_fixture_state(catalog, case.world_fixture_id)
+    expected_post_state = deepcopy(fixture_state)
+    input_text = _input_text(item)
+    campaign_match = re.search(r"\bcampaign_\d{3}\b", input_text)
+    for assertion in case.expected_behavior.assertions:
+        if assertion.operator == "audit_delta" and campaign_match:
+            for campaign in expected_post_state["campaigns"]:
+                if campaign["id"] == campaign_match.group(0):
+                    campaign["budget"] = float(campaign["budget"]) + float(assertion.expected)
     if case.fault_schedule_id == "none":
         schedule_sha = sha256_bytes(canonical_json({"schedule_id": "none", "decisions": []}))
     else:
         schedule_sha = catalog.fault_schedules[case.fault_schedule_id].sha256
     return {
         "id": f"m4-{case.case_id}",
-        "input": _input_text(item),
+        "input": input_text,
         "expected_behavior": f"{case.scenario_kind}:{item['attribution']['behavior_label']}",
         "assertions": [assertion.model_dump(mode="json") for assertion in case.expected_behavior.assertions],
         "slice": slice_name,
@@ -126,8 +152,8 @@ def _dataset_item(
         "source_sha256": item["lineage"]["source_sha256"],
         "schema_version": "dataset_v1",
         "world_fixture_id": case.world_fixture_id,
-        "pre_state_sha256": fixture.pre_state_sha256,
-        "expected_post_state": {},
+        "pre_state_sha256": sha256_bytes(canonical_json(fixture_state)),
+        "expected_post_state": expected_post_state,
         "fault_schedule_id": case.fault_schedule_id,
         "fault_schedule_version": "v1",
         "fault_schedule_sha256": schedule_sha,

@@ -196,3 +196,30 @@ def test_compose_registers_private_m4_proxy_and_capture_defaults() -> None:
     assert "CAPTURE_MODEL_TURNS=false" in env_example
     assert "HARNESS_M4_EVAL_MODE=false" in env_example
     assert "HARNESS_M4_CONTROL_TOKEN=" in env_example
+
+
+def test_m4_wrapper_is_isolated_resumable_and_always_restores_normal_runtime() -> None:
+    script = (LAB_ROOT / "scripts" / "run_verify_m4_home5090.sh").read_text(encoding="utf-8")
+
+    for database in (
+        "harness_m4_${gate_id}",
+        "harness_m4_replay_live1_${gate_id}",
+        "harness_m4_replay_live2_${gate_id}",
+        "harness_m4_test_${gate_id}",
+    ):
+        assert database in script
+    for redis_db in (12, 13, 14, 15):
+        assert f"redis://redis:6379/{redis_db}" in script
+    assert "trap restore_normal_runtime EXIT" in script
+    assert "--restore-only" in script
+    assert "pre_gate_runtime.json" in script
+    assert "CAPTURE_MODEL_TURNS=true" in script
+    assert "CAPTURE_MODEL_TURNS=false" in script
+    assert "build api dispatcher worker sweeper migrate chaos-proxy" in script
+    assert "normal-database-url" in script
+    assert "scripts/m4_watchdog.py" in script
+    assert "--limit-bytes 4294967296" in script
+    assert "down -v" not in script
+    assert "DROP DATABASE" not in script
+    assert "rm -rf" not in script
+    assert "9000:9000" not in (LAB_ROOT / "compose.yaml").read_text(encoding="utf-8")

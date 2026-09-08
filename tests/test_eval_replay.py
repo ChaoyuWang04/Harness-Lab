@@ -11,6 +11,8 @@ LAB_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(LAB_ROOT))
 
 from app.eval.catalog import load_eval_catalog  # noqa: E402
+from app.eval.catalog import canonical_json, sha256_bytes  # noqa: E402
+from app.eval.dataset import pseudonymized_fixture_state  # noqa: E402
 from app.eval.replay import ReplayError, run_live_replay, score_dataset, score_item  # noqa: E402
 
 
@@ -115,7 +117,9 @@ def test_live_replay_orders_fixture_schedule_and_uses_disjoint_execution_identit
             "source_case_id": "env-01",
             "slice": "resilience",
             "assertions": [{"operator": "terminal", "expected": True}],
-            "pre_state_sha256": catalog.world_fixtures["campaigns-v1"].pre_state_sha256,
+            "pre_state_sha256": sha256_bytes(
+                canonical_json(pseudonymized_fixture_state(catalog, "campaigns-v1"))
+            ),
             "world_fixture_id": "campaigns-v1",
             "fault_schedule_id": "env-01",
             "fault_schedule_sha256": catalog.fault_schedules["env-01"].sha256,
