@@ -127,10 +127,11 @@ converge_normal_runtime
 
 "${compose[@]}" build \
   --build-arg PACKAGE_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple \
+  --build-arg INSTALL_DEV=true \
   api dispatcher worker sweeper migrate chaos-proxy
 docker run --rm harness-lab-api python -c "from app.eval.model_turns import record_model_turn; from app.eval.dataset import build_dataset"
 docker compose --env-file secrets/.env up -d postgres redis lgtm ollama
-python scripts/m4_watchdog.py \
+python3 scripts/m4_watchdog.py \
   --output "${artifact_dir}/resource_watchdog.jsonl" \
   --parent "$$" \
   --limit-bytes 4294967296 \
@@ -169,9 +170,12 @@ if [[ "${mode}" == "new" ]]; then
   for database_url in "${generation_url}" "${replay_live1_url}" "${replay_live2_url}" "${test_url}"; do
     HARNESS_COMPOSE_DATABASE_URL="${database_url}" "${compose[@]}" run --rm migrate
   done
-  TEST_DATABASE_URL="${test_url}" TEST_REDIS_URL="${test_redis}" \
-    docker compose --env-file secrets/.env run --rm \
-      -e TEST_DATABASE_URL="${test_url}" -e TEST_REDIS_URL="${test_redis}" api python -m pytest -q
+  docker run --rm --network harness-lab_default --env-file secrets/.env \
+    -e TEST_DATABASE_URL="${test_url}" \
+    -e TEST_REDIS_URL="${test_redis}" \
+    -v "${lab_root}:${lab_root}:ro" \
+    -w "${lab_root}" \
+    harness-lab-api python -m pytest -q "${lab_root}/tests"
 fi
 
 control_token="$(openssl rand -hex 32)"
