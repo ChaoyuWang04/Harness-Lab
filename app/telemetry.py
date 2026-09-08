@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import urllib.parse
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -31,6 +32,24 @@ ERROR_CODES = frozenset(
 HTTP_STATUSES = frozenset({"200", "429", "timeout", "error"})
 TOOL_NAMES = frozenset({"get_campaign", "get_report", "adjust_budget"})
 SWEEP_OUTCOMES = frozenset({"requeued", "max_retry"})
+LANGFUSE_CLOUD_HOSTS = frozenset(
+    {
+        "cloud.langfuse.com",
+        "us.cloud.langfuse.com",
+        "jp.cloud.langfuse.com",
+        "hipaa.cloud.langfuse.com",
+    }
+)
+
+
+def normalize_langfuse_base_url(value: str) -> str:
+    candidate = value.strip().rstrip("/")
+    if candidate in LANGFUSE_CLOUD_HOSTS:
+        candidate = f"https://{candidate}"
+    parsed = urllib.parse.urlsplit(candidate)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("LANGFUSE_BASE_URL must be a valid HTTP(S) URL")
+    return candidate
 
 
 def _bounded(value: str, allowed: frozenset[str], label: str) -> str:
@@ -351,10 +370,19 @@ def initialize_observability(
             )
         meter_provider = MeterProvider(resource=resource, metric_readers=metric_readers)
 
-        if os.getenv("LANGFUSE_PUBLIC_KEY") and os.getenv("LANGFUSE_SECRET_KEY"):
+        langfuse_public_key = os.getenv("LANGFUSE_PUBLIC_KEY")
+        langfuse_secret_key = os.getenv("LANGFUSE_SECRET_KEY")
+        if langfuse_public_key and langfuse_secret_key:
             from langfuse import Langfuse
 
-            langfuse = Langfuse(tracer_provider=tracer_provider)
+            langfuse = Langfuse(
+                public_key=langfuse_public_key,
+                secret_key=langfuse_secret_key,
+                base_url=normalize_langfuse_base_url(
+                    os.getenv("LANGFUSE_BASE_URL", "https://cloud.langfuse.com")
+                ),
+                tracer_provider=tracer_provider,
+            )
 
         trace.set_tracer_provider(tracer_provider)
         metrics.set_meter_provider(meter_provider)

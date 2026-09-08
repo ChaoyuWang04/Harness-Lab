@@ -66,6 +66,18 @@ def test_metric_labels_are_bounded() -> None:
         validate_http_status("503")
 
 
+def test_langfuse_base_url_normalizes_only_known_cloud_regions() -> None:
+    from app.telemetry import normalize_langfuse_base_url
+
+    assert normalize_langfuse_base_url("cloud.langfuse.com") == "https://cloud.langfuse.com"
+    assert (
+        normalize_langfuse_base_url("https://us.cloud.langfuse.com/")
+        == "https://us.cloud.langfuse.com"
+    )
+    with pytest.raises(ValueError, match="HTTP"):
+        normalize_langfuse_base_url("unregistered.internal")
+
+
 def test_sentry_scrubber_removes_request_secrets_but_keeps_run_id() -> None:
     from app.telemetry import scrub_sentry_event
 

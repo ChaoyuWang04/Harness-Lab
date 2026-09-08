@@ -15,6 +15,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from app.telemetry import normalize_langfuse_base_url
+
 
 LAB_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ENV = LAB_ROOT / "secrets" / ".env"
@@ -82,9 +84,7 @@ def build_sentry_request(dsn: str) -> tuple[urllib.request.Request, str]:
 def build_langfuse_request(
     base_url: str, public_key: str, secret_key: str
 ) -> urllib.request.Request:
-    parsed = urllib.parse.urlsplit(base_url)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        raise ValueError("LANGFUSE_BASE_URL is not a valid HTTP(S) URL")
+    base_url = normalize_langfuse_base_url(base_url)
     endpoint = base_url.rstrip("/") + "/api/public/projects"
     token = base64.b64encode(f"{public_key}:{secret_key}".encode("utf-8")).decode("ascii")
     return urllib.request.Request(

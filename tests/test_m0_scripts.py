@@ -293,6 +293,14 @@ class CloudCredentialVerifierTests(unittest.TestCase):
         self.assertEqual(request.full_url, "https://cloud.langfuse.com/api/public/projects")
         self.assertTrue(request.get_header("Authorization").startswith("Basic "))
 
+    def test_langfuse_request_normalizes_known_cloud_host_without_scheme(self) -> None:
+        module = load_cloud_verifier_module()
+        request = module.build_langfuse_request(
+            "cloud.langfuse.com", "pk-test", "sk-test"
+        )
+
+        self.assertEqual(request.full_url, "https://cloud.langfuse.com/api/public/projects")
+
 
 if __name__ == "__main__":
     unittest.main()
