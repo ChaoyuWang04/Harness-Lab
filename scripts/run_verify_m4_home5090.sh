@@ -40,10 +40,12 @@ stop_watchdog() {
 }
 
 converge_normal_runtime() {
+  docker compose --env-file secrets/.env up -d lgtm
   HARNESS_COMPOSE_DATABASE_URL="postgresql+psycopg://postgres:harness@postgres:5432/harness" \
   HARNESS_COMPOSE_REDIS_URL="redis://redis:6379/0" \
   HARNESS_COMPOSE_LLM_BASE_URL="http://ollama:11434/v1" \
   HARNESS_API_WORKERS=4 \
+  HARNESS_OTEL_EXPORT_ENABLED=true \
   CAPTURE_MODEL_TURNS=false \
   HARNESS_TEST_PAUSE_AFTER_TOOL_SECONDS=0 \
     docker compose --env-file secrets/.env up -d --force-recreate --scale worker=1 api dispatcher worker sweeper
@@ -132,6 +134,7 @@ converge_normal_runtime
   api dispatcher worker sweeper migrate chaos-proxy
 docker run --rm harness-lab-api python -c "from app.eval.model_turns import record_model_turn; from app.eval.dataset import build_dataset"
 docker compose --env-file secrets/.env up -d postgres redis lgtm ollama
+docker compose --env-file secrets/.env stop lgtm
 python3 scripts/m4_watchdog.py \
   --output "${artifact_dir}/resource_watchdog.jsonl" \
   --parent "$$" \
@@ -185,6 +188,7 @@ HARNESS_COMPOSE_DATABASE_URL="${generation_url}" \
 HARNESS_COMPOSE_REDIS_URL="${generation_redis}" \
 HARNESS_COMPOSE_LLM_BASE_URL="http://chaos-proxy:9000/v1" \
 HARNESS_API_WORKERS=1 \
+HARNESS_OTEL_EXPORT_ENABLED=false \
 HARNESS_M4_EVAL_MODE=true \
 HARNESS_M4_CONTROL_TOKEN="${control_token}" \
 CAPTURE_MODEL_TURNS=true \

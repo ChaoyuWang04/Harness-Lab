@@ -95,6 +95,10 @@ git pull --ff-only
 /home/samwang/code/projects/Harness-Lab/artifacts/m4/gate1/
 ```
 
+M4 生成与 replay 期间会暂时停止本地 LGTM，并只对该隔离运行面关闭 OTLP 导出；PostgreSQL
+model turns、Langfuse 和 Sentry 仍保留。此时 Grafana 链接短暂不可用是预期行为。退出 trap 会先
+重新启动 LGTM，再用 `HARNESS_OTEL_EXPORT_ENABLED=true` 恢复普通服务；M2/M3 的观测配置不变。
+
 只允许把下面两个已经脱敏的文件复制到 Mac 同名 ignored 目录，并核对
 `review_sample.json` 内登记的 SHA：
 

@@ -32,6 +32,28 @@ def test_observability_initialization_failure_is_non_fatal() -> None:
     assert runtime.enabled is False
 
 
+def test_observability_can_keep_cloud_sinks_without_local_otel_export() -> None:
+    from app import telemetry
+
+    def unexpected_exporter(**_kwargs):
+        raise AssertionError("local OTLP exporter must remain disabled")
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(telemetry.settings, "harness_otel_export_enabled", False)
+        patch.setattr(telemetry, "OTLPSpanExporter", unexpected_exporter)
+        patch.setattr(telemetry, "OTLPMetricExporter", unexpected_exporter)
+        patch.setattr(telemetry, "_instrument_clients", lambda _engine: None)
+        patch.setattr(telemetry, "_init_sentry", lambda: None)
+        patch.setattr(telemetry.trace, "set_tracer_provider", lambda _provider: None)
+        patch.setattr(telemetry.metrics, "set_meter_provider", lambda _provider: None)
+        patch.delenv("LANGFUSE_PUBLIC_KEY", raising=False)
+        patch.delenv("LANGFUSE_SECRET_KEY", raising=False)
+        runtime = telemetry.initialize_observability("cloud-only-test", enabled=True)
+
+    assert runtime.enabled is True
+    runtime.shutdown()
+
+
 def test_metric_labels_are_bounded() -> None:
     from app.telemetry import validate_error_code, validate_http_status, validate_run_status
 

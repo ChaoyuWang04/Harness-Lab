@@ -196,6 +196,7 @@ def test_compose_registers_private_m4_proxy_and_capture_defaults() -> None:
     assert "CAPTURE_MODEL_TURNS=false" in env_example
     assert "HARNESS_M4_EVAL_MODE=false" in env_example
     assert "HARNESS_M4_CONTROL_TOKEN=" in env_example
+    assert "HARNESS_OTEL_EXPORT_ENABLED=true" in env_example
 
 
 def test_ollama_capacity_is_fixed_for_the_four_gibibyte_lab_budget() -> None:
@@ -225,6 +226,10 @@ def test_m4_wrapper_is_isolated_resumable_and_always_restores_normal_runtime() -
     assert "CAPTURE_MODEL_TURNS=false" in script
     assert "HARNESS_API_WORKERS=1" in script
     assert "HARNESS_API_WORKERS=4" in script
+    assert "HARNESS_OTEL_EXPORT_ENABLED=false" in script
+    assert "HARNESS_OTEL_EXPORT_ENABLED=true" in script
+    assert 'stop lgtm' in script
+    assert 'up -d lgtm' in script
     assert "--build-arg" in script
     assert "PACKAGE_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple" in script
     assert "ARG PACKAGE_INDEX_URL=https://pypi.org/simple" in dockerfile

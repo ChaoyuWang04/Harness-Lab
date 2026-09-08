@@ -334,18 +334,22 @@ def initialize_observability(
         resource = Resource.create({"service.name": service_name, "deployment.environment": "harness-lab"})
         endpoint = settings.otel_exporter_otlp_endpoint
         tracer_provider = TracerProvider(resource=resource)
-        tracer_provider.add_span_processor(
-            BatchSpanProcessor(
-                OTLPSpanExporter(endpoint=endpoint, insecure=endpoint.startswith("http://")),
-                export_timeout_millis=settings.otel_export_timeout_ms,
+        metric_readers = []
+        if settings.harness_otel_export_enabled:
+            tracer_provider.add_span_processor(
+                BatchSpanProcessor(
+                    OTLPSpanExporter(endpoint=endpoint, insecure=endpoint.startswith("http://")),
+                    export_timeout_millis=settings.otel_export_timeout_ms,
+                )
             )
-        )
-        metric_reader = PeriodicExportingMetricReader(
-            OTLPMetricExporter(endpoint=endpoint, insecure=endpoint.startswith("http://")),
-            export_interval_millis=settings.otel_metric_export_interval_ms,
-            export_timeout_millis=settings.otel_export_timeout_ms,
-        )
-        meter_provider = MeterProvider(resource=resource, metric_readers=[metric_reader])
+            metric_readers.append(
+                PeriodicExportingMetricReader(
+                    OTLPMetricExporter(endpoint=endpoint, insecure=endpoint.startswith("http://")),
+                    export_interval_millis=settings.otel_metric_export_interval_ms,
+                    export_timeout_millis=settings.otel_export_timeout_ms,
+                )
+            )
+        meter_provider = MeterProvider(resource=resource, metric_readers=metric_readers)
 
         if os.getenv("LANGFUSE_PUBLIC_KEY") and os.getenv("LANGFUSE_SECRET_KEY"):
             from langfuse import Langfuse

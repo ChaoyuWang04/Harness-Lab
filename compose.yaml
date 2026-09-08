@@ -126,6 +126,7 @@ services:
       LLM_BASE_URL: ${HARNESS_COMPOSE_LLM_BASE_URL:-http://ollama:11434/v1}
       HARNESS_API_WORKERS: ${HARNESS_API_WORKERS:-4}
       HARNESS_OBSERVABILITY_ENABLED: "true"
+      HARNESS_OTEL_EXPORT_ENABLED: ${HARNESS_OTEL_EXPORT_ENABLED:-true}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
     ports:
       - "127.0.0.1:8000:8000"
@@ -150,6 +151,7 @@ services:
       CHAOS_DISPATCHER_CRASH_AFTER_PUBLISH: ${CHAOS_DISPATCHER_CRASH_AFTER_PUBLISH:-false}
       CHAOS_DISPATCHER_MARKER: /var/lib/harness-chaos/dispatcher-after-publish.once
       HARNESS_OBSERVABILITY_ENABLED: "true"
+      HARNESS_OTEL_EXPORT_ENABLED: ${HARNESS_OTEL_EXPORT_ENABLED:-true}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
     volumes:
       - ./data/chaos:/var/lib/harness-chaos
@@ -174,6 +176,7 @@ services:
       HARNESS_TEST_PAUSE_AFTER_TOOL_SECONDS: ${HARNESS_TEST_PAUSE_AFTER_TOOL_SECONDS:-0}
       CAPTURE_MODEL_TURNS: ${CAPTURE_MODEL_TURNS:-false}
       HARNESS_OBSERVABILITY_ENABLED: "true"
+      HARNESS_OTEL_EXPORT_ENABLED: ${HARNESS_OTEL_EXPORT_ENABLED:-true}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
     mem_limit: 1g
     restart: unless-stopped
@@ -194,6 +197,7 @@ services:
       REDIS_URL: ${HARNESS_COMPOSE_REDIS_URL:-redis://redis:6379/0}
       LLM_BASE_URL: ${HARNESS_COMPOSE_LLM_BASE_URL:-http://ollama:11434/v1}
       HARNESS_OBSERVABILITY_ENABLED: "true"
+      HARNESS_OTEL_EXPORT_ENABLED: ${HARNESS_OTEL_EXPORT_ENABLED:-true}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
     mem_limit: 256m
     restart: unless-stopped
