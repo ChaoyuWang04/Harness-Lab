@@ -6,6 +6,7 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
   "alembic",
   "fastapi",
+  "jsonschema>=4.26.0",
   "langfuse>=4.15.1",
   "openai",
   "opentelemetry-exporter-otlp-proto-grpc>=1.44.0",
