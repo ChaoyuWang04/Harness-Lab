@@ -122,6 +122,14 @@ def test_m3_gate8_has_fresh_database_redis_and_evidence_namespaces() -> None:
     assert "artifacts/m3/gate8/gate_m3.json" in script
 
 
+def test_m3_gate9_has_fresh_database_redis_and_evidence_namespaces() -> None:
+    script = (LAB_ROOT / "scripts" / "run_verify_m3_home5090.sh").read_text(encoding="utf-8")
+
+    assert "harness_m3_gate9" in script
+    assert "redis://redis:6379/11" in script
+    assert "artifacts/m3/gate9/gate_m3.json" in script
+
+
 def test_poolwarm_load_probe_has_fresh_namespace_and_mode() -> None:
     script = (LAB_ROOT / "scripts" / "run_verify_m3_home5090.sh").read_text(encoding="utf-8")
 

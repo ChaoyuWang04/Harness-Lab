@@ -55,6 +55,12 @@ case "${gate_id}" in
     m3_redis_url="redis://redis:6379/8"
     m3_output="${lab_root}/artifacts/m3/gate8/gate_m3.json"
     ;;
+  gate9)
+    m3_database_name="harness_m3_gate9"
+    m3_test_database_name="harness_m3_gate9_test"
+    m3_redis_url="redis://redis:6379/11"
+    m3_output="${lab_root}/artifacts/m3/gate9/gate_m3.json"
+    ;;
   poolwarm_probe)
     m3_database_name="harness_m3_poolwarm_probe"
     m3_test_database_name="harness_m3_poolwarm_probe_test"

@@ -295,6 +295,21 @@
 - 固定负载与门槛：四执行 worker、300 ms provider latency、500 runs、concurrency=50、连接复用、无 Idempotency-Key；要求 500/500 terminal、0 failed、POST P95 `<150 ms`、Lab RSS `<4 GiB`
 - 停止与晋级：未通过则保留证据并停止，不运行完整 Gate；通过后才以全新数据库、Redis DB 和证据目录注册完整 M3 Gate，全部六项仍按原门槛重新执行
 
+### [M3-WRITEPATH-DIAG] 单 flush 写路径通过真实四-worker定向实压
+
+- 时间：2026-09-08 CST；提交 `6813248`，在 home-5090 的真实 PostgreSQL、Redis、四 API 进程和四执行 worker 上执行
+- 机制：旧实现的单元正对照观察到两次 flush 并按预期失败；新实现为一次 flush。本轮专用 PostgreSQL 集成测试 3/3 通过，证明原子落库、首事件 sequence=1、外层回滚无半成品、三线程同幂等键只生成一个 run
+- 性能：500/500 completed、0 failed，POST P95=87.850 ms、queue-lag P95=385.512 s、run P95=0.561 s、throughput=74.179 run/min，PASS
+- 资源与恢复：trap 后八项普通服务均 running，Lab RSS 约 2.59 GiB，低于 4 GiB；执行 worker 恢复为 1
+- 结论：与前次连接池预热的 155.448 ms 相比，消除新 run 首事件的多余读取和 flush 后 P95 明确低于 150 ms。该定向结果只允许晋级完整复验，不能代替 Gate M3
+
+### [M3-GATE-9-PRE] 单 flush 写路径后的完整六实验复验
+
+- 时间：2026-09-08 CST；沿用用户明确批准完成 M3 的授权
+- 隔离：新 PostgreSQL 数据库 `harness_m3_gate9`、测试数据库 `harness_m3_gate9_test`、Redis DB 11、证据 `artifacts/m3/gate9/`；不覆盖 Gate 1～8 或诊断证据
+- 固定实现：提交 `6813248`；四 API 进程、普通单执行 worker、EXP-3/5 内按原计划临时扩为四执行 worker；新 run 单事务单 flush，其他可靠性机制不变
+- 判据：从 EXP-1 到 EXP-6 全部重新执行；样本数、故障比例、恢复时限、两个 500×50 臂的 POST P95 `<150 ms`、queue-lag 降幅至少 50%、全局重复审计、比较表完整性和 RSS `<4 GiB` 全部沿用原预注册值。任一项失败即停止并保留本 Gate
+
 ## 运行面迁移 · 独立 Git + home-5090
 
 ### [MIG-G1] Git 边界
