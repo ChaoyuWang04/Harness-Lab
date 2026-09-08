@@ -286,7 +286,7 @@ Write to a sibling `.tmp`, `fsync`, then `os.replace`. Canonical JSON is UTF-8, 
 
 - [ ] **Step 4: Implement the sequential cohort runner**
 
-For every catalog case: restore campaign rows in one transaction; hash and compare pre-state; arm or explicitly disarm the proxy; POST with deterministic idempotency key; wait for terminal; collect run ID, event sequence, model-turn statuses, audit deltas, proxy snapshot, expected post-state, and timestamps. Abort on cross-case schedule consumption, unexpected model attempt, missing terminal, side-effect violation, or normal DB/Redis contamination.
+For every catalog case: restore campaign rows in one transaction; hash and compare pre-state; arm or explicitly disarm the proxy; POST with deterministic idempotency key; wait for terminal; collect run ID, event sequence, model-turn statuses, audit deltas, proxy snapshot, expected post-state, and timestamps. Abort on cross-case schedule consumption, unexpected model attempt, missing terminal, side-effect violation, or normal DB/Redis contamination. Normal Redis contamination is measured by references to this Gate's run IDs across DB 0 keys and serialized values; volatile RQ worker heartbeat/registry metadata is not required to remain byte-identical over a long Gate.
 
 The final cohort manifest must freeze source config hashes, model, prompt version, retry settings, commit SHA, database/Redis identities, host, Compose service identities, and all 50 case-to-run mappings.
 

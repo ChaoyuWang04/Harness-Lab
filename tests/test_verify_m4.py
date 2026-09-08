@@ -126,6 +126,29 @@ def test_cohort_stops_on_safety_side_effect(tmp_path: Path) -> None:
     assert not (tmp_path / "unsafe" / "cohort_manifest.json").exists()
 
 
+def test_redis_contamination_checks_run_references_not_volatile_rq_metadata() -> None:
+    from scripts.verify_m4 import redis_run_reference_count
+
+    class FakeRedis:
+        payloads = {
+            b"rq:worker:volatile": b"heartbeat-changed",
+            b"rq:job:run_target_outbox_1": b"job-data",
+            b"rq:queue:runs": b"contains-run_other_outbox_2",
+        }
+
+        def scan_iter(self):
+            return iter(self.payloads)
+
+        def dump(self, key):
+            return self.payloads[key]
+
+    redis = FakeRedis()
+
+    assert redis_run_reference_count(redis, {"run_absent"}) == 0
+    assert redis_run_reference_count(redis, {"run_target"}) == 1
+    assert redis_run_reference_count(redis, {"run_other"}) == 1
+
+
 def test_atomic_json_has_canonical_bytes_and_refuses_overwrite(tmp_path: Path) -> None:
     destination = tmp_path / "artifact.json"
     digest = atomic_write_json(destination, {"z": 1, "中文": 2})

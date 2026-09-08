@@ -56,6 +56,19 @@ def validate_new_artifact_dir(artifact_dir: Path) -> None:
         raise SystemExit("new gate refuses an existing material artifact directory")
 
 
+def redis_run_reference_count(client: Redis, run_ids: set[str]) -> int:
+    encoded_ids = tuple(run_id.encode("utf-8") for run_id in sorted(run_ids))
+    if not encoded_ids:
+        return 0
+    matches = 0
+    for key in client.scan_iter():
+        payload = client.dump(key) or b""
+        evidence = key + b"\0" + payload
+        if any(run_id in evidence for run_id in encoded_ids):
+            matches += 1
+    return matches
+
+
 def validate_resume_identity(
     state: dict[str, Any],
     *,
@@ -160,8 +173,8 @@ class LiveCohortRuntime:
         self.proxy_base = proxy_base.rstrip("/")
         self.headers = {"x-harness-m4-token": control_token}
         self.catalog = catalog
+        self.submitted_run_ids: set[str] = set()
         self.normal_database_digest = self._normal_database_digest()
-        self.normal_redis_digest = self._redis_digest(self.normal_redis)
 
     def close(self) -> None:
         self.engine.dispose()
@@ -187,16 +200,6 @@ class LiveCohortRuntime:
                 for row in session.scalars(select(Campaign).order_by(Campaign.id)).all()
             ]
         return hashlib.sha256(canonical_json({"counts": counts, "campaigns": campaigns})).hexdigest()
-
-    @staticmethod
-    def _redis_digest(client: Redis) -> str:
-        digest = hashlib.sha256()
-        for key in sorted(client.scan_iter()):
-            payload = client.dump(key)
-            digest.update(len(key).to_bytes(8, "big"))
-            digest.update(key)
-            digest.update(payload or b"")
-        return digest.hexdigest()
 
     def restore_fixture(self, case: EvalCase) -> str:
         fixture = self.catalog.world_fixtures[case.world_fixture_id]
@@ -246,7 +249,9 @@ class LiveCohortRuntime:
         )
         if response.status_code != 201:
             raise CohortError(f"run creation failed for {case.case_id}: {response.status_code}")
-        return str(response.json()["run_id"])
+        run_id = str(response.json()["run_id"])
+        self.submitted_run_ids.add(run_id)
+        return run_id
 
     def wait_terminal(self, run_id: str) -> dict[str, object]:
         deadline = time.monotonic() + 240
@@ -301,8 +306,8 @@ class LiveCohortRuntime:
             "normal_database_changed": int(
                 self._normal_database_digest() != self.normal_database_digest
             ),
-            "normal_redis_changed": int(
-                self._redis_digest(self.normal_redis) != self.normal_redis_digest
+            "normal_redis_run_references": redis_run_reference_count(
+                self.normal_redis, self.submitted_run_ids
             ),
         }
 
