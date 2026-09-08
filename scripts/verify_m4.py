@@ -49,6 +49,13 @@ def aggregate_gate(criteria: list[dict[str, Any]], *, output: Path) -> dict[str,
     return result
 
 
+def validate_new_artifact_dir(artifact_dir: Path) -> None:
+    existing = {path.name for path in artifact_dir.iterdir()} if artifact_dir.exists() else set()
+    allowed = {"pre_gate_runtime.json", "resource_watchdog.jsonl"}
+    if existing - allowed:
+        raise SystemExit("new gate refuses an existing material artifact directory")
+
+
 def validate_resume_identity(
     state: dict[str, Any],
     *,
@@ -801,9 +808,7 @@ def _start_m4_runtime(
 def run_new(args: argparse.Namespace) -> int:
     validate_gate_id(args.gate_id)
     artifact_dir = args.artifact_dir
-    existing = {path.name for path in artifact_dir.iterdir()} if artifact_dir.exists() else set()
-    if existing - {"pre_gate_runtime.json"}:
-        raise SystemExit("new gate refuses an existing material artifact directory")
+    validate_new_artifact_dir(artifact_dir)
     catalog = load_eval_catalog(args.config_root)
     runtime = LiveCohortRuntime(
         database_url=args.database_url,

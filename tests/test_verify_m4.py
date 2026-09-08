@@ -145,6 +145,18 @@ def test_gate_id_is_bounded_for_database_and_artifact_safety() -> None:
             validate_gate_id(invalid)
 
 
+def test_new_gate_allows_only_wrapper_snapshot_and_watchdog(tmp_path: Path) -> None:
+    from scripts.verify_m4 import validate_new_artifact_dir
+
+    (tmp_path / "pre_gate_runtime.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "resource_watchdog.jsonl").write_text("{}\n", encoding="utf-8")
+    validate_new_artifact_dir(tmp_path)
+
+    (tmp_path / "unexpected.json").write_text("{}", encoding="utf-8")
+    with pytest.raises(SystemExit, match="existing material"):
+        validate_new_artifact_dir(tmp_path)
+
+
 def test_m4_gate_aggregator_marks_pending_and_fail_as_not_passed(tmp_path: Path) -> None:
     from scripts.verify_m4 import aggregate_gate
 
