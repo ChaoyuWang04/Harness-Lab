@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
-from sqlalchemy import create_engine, delete, select
+from sqlalchemy import create_engine, delete, func, select
 from sqlalchemy.orm import sessionmaker
 
 
@@ -140,6 +140,38 @@ class AgentLoopTests(unittest.TestCase):
             event_types,
             ["step.model_call", "step.tool_call", "step.tool_result", "step.model_call"],
         )
+
+    def test_capture_disabled_keeps_twenty_runs_behavior_and_model_turn_count_zero(self) -> None:
+        with self.sessions.begin() as session:
+            for index in range(2, 21):
+                session.add(
+                    AgentRun(
+                        id=f"run_agent_{index:03d}",
+                        status="running",
+                        input_json={"prompt": "hello"},
+                        lease_owner="worker-a",
+                        lease_expires_at=datetime.now(timezone.utc) + timedelta(minutes=2),
+                        attempt=1,
+                    )
+                )
+
+        answers = []
+        with mock.patch.object(settings, "capture_model_turns", False):
+            for index in range(1, 21):
+                answers.append(
+                    run_agent(
+                        self.sessions,
+                        self.fence,
+                        f"run_agent_{index:03d}",
+                        "hello",
+                        SequenceClient([ModelTurn("ok", [])]),
+                    )["answer"]
+                )
+
+        with self.sessions() as session:
+            captured = session.scalar(select(func.count()).select_from(ModelTurnRecord))
+        self.assertEqual(answers, ["ok"] * 20)
+        self.assertEqual(captured, 0)
 
     def test_malformed_tool_arguments_are_bad_output(self) -> None:
         client = SequenceClient([ModelTurn(None, [ToolInvocation("call-1", "get_report", "not-json")])])

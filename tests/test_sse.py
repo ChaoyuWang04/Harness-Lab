@@ -16,7 +16,7 @@ sys.path.insert(0, str(LAB_ROOT))
 
 from app.api.main import create_app  # noqa: E402
 from app.events import append_event  # noqa: E402
-from app.models import AgentRun, IdempotencyKey, OutboxJob, RunEvent  # noqa: E402
+from app.models import AgentRun, IdempotencyKey, ModelTurnRecord, OutboxJob, RunEvent  # noqa: E402
 
 
 @unittest.skipUnless(os.getenv("TEST_DATABASE_URL"), "requires Compose PostgreSQL")
@@ -34,6 +34,7 @@ class SseReplayTests(unittest.TestCase):
 
     def setUp(self) -> None:
         with self.sessions.begin() as session:
+            session.execute(delete(ModelTurnRecord))
             session.execute(delete(IdempotencyKey))
             session.execute(delete(OutboxJob))
             session.execute(delete(RunEvent))
@@ -66,6 +67,38 @@ class SseReplayTests(unittest.TestCase):
             headers={"Last-Event-ID": "not-an-int"},
         )
         self.assertEqual(response.status_code, 400)
+
+    def test_sse_does_not_join_or_serialize_private_model_turns(self) -> None:
+        sentinel = "M4_SSE_PRIVATE_SENTINEL_51ac"
+        with self.sessions.begin() as session:
+            run = AgentRun(
+                id="run_sse_private",
+                status="completed",
+                input_json={"prompt": "public"},
+                result_json={"answer": "done"},
+            )
+            session.add(run)
+            session.flush()
+            append_event(session, run.id, "run.created")
+            append_event(session, run.id, "run.completed", {"answer": "done"})
+            session.add(
+                ModelTurnRecord(
+                    run_id=run.id,
+                    run_attempt=1,
+                    step=1,
+                    model_attempt=0,
+                    prompt_version="v1",
+                    input_messages_json=[{"role": "user", "content": sentinel}],
+                    output_message_json={"content": sentinel},
+                    usage_json={"sentinel": sentinel},
+                    error_code=None,
+                )
+            )
+
+        response = self.client.get(f"/runs/{run.id}/events")
+        self.assertNotIn(sentinel, response.text)
+        for private_key in ("model_turns", "input_messages_json", "output_message_json"):
+            self.assertNotIn(private_key, response.text)
 
 
 if __name__ == "__main__":
