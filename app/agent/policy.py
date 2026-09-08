@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Literal
+from typing import Any, Literal
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,6 +29,21 @@ class BudgetAdjustmentIntent:
 @dataclass(frozen=True, slots=True)
 class ToolPolicy:
     budget_adjustment: BudgetAdjustmentIntent | None
+
+
+def normalize_authorized_tool_arguments(
+    tool_name: str,
+    arguments: dict[str, Any],
+    policy: ToolPolicy | None,
+) -> dict[str, Any]:
+    normalized = dict(arguments)
+    intent = policy.budget_adjustment if policy is not None else None
+    if tool_name != "adjust_budget" or intent is None:
+        return normalized
+    abbreviated = intent.campaign_id.removeprefix("camp_")
+    if str(normalized.get("campaign_id", "")) == abbreviated:
+        normalized["campaign_id"] = intent.campaign_id
+    return normalized
 
 
 def _decimal(value: str) -> Decimal:

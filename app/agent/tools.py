@@ -10,7 +10,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.agent.policy import ToolPolicy
+from app.agent.policy import ToolPolicy, normalize_authorized_tool_arguments
 from app.fencing import WorkerFence, lock_current_run
 from app.models import AgentRun, BudgetAudit, Campaign, ToolCall
 
@@ -121,6 +121,7 @@ def execute_tool_with_outcome(
     policy: ToolPolicy | None = None,
 ) -> ToolExecution:
     _lock_current_run(session, run_id, fence)
+    arguments = normalize_authorized_tool_arguments(tool_name, arguments, policy)
     tool_key = canonical_tool_key(run_id, step, tool_name, arguments)
     existing = session.scalar(select(ToolCall).where(ToolCall.idempotency_key == tool_key))
     if existing is not None:

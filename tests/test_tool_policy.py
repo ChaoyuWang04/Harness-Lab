@@ -9,7 +9,7 @@ import yaml
 LAB_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(LAB_ROOT))
 
-from app.agent.policy import build_tool_policy
+from app.agent.policy import build_tool_policy, normalize_authorized_tool_arguments
 
 
 @pytest.mark.parametrize(
@@ -41,6 +41,20 @@ def test_non_write_prompt_has_no_budget_authorization() -> None:
     policy = build_tool_policy("查询 camp_001 的当前预算和状态。")
 
     assert policy.budget_adjustment is None
+
+
+def test_authorized_budget_id_restores_only_the_exact_missing_prefix() -> None:
+    policy = build_tool_policy("将 camp_001 的预算增加 50，并告诉我新预算。")
+
+    assert normalize_authorized_tool_arguments(
+        "adjust_budget", {"campaign_id": "001", "delta": 50}, policy
+    ) == {"campaign_id": "camp_001", "delta": 50}
+    assert normalize_authorized_tool_arguments(
+        "adjust_budget", {"campaign_id": "002", "delta": 50}, policy
+    ) == {"campaign_id": "002", "delta": 50}
+    assert normalize_authorized_tool_arguments(
+        "get_campaign", {"campaign_id": "001"}, policy
+    ) == {"campaign_id": "001"}
 
 
 def test_registered_budget_cases_resolve_to_the_preregistered_complete_delta() -> None:
