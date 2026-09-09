@@ -70,6 +70,15 @@ def redis_run_reference_count(client: Redis, run_ids: set[str]) -> int:
     return matches
 
 
+def replay_redis_work_key_count(client: Redis) -> int:
+    volatile_worker_keys = {b"rq:workers", b"rq:queues"}
+    return sum(
+        1
+        for key in client.scan_iter()
+        if key not in volatile_worker_keys and not key.startswith(b"rq:worker:")
+    )
+
+
 def validate_resume_identity(
     state: dict[str, Any],
     *,
@@ -703,9 +712,11 @@ class LiveReplayRuntime:
                 )
                 or 0
             )
-        if active or outbox or self.redis.dbsize():
+        redis_work_keys = replay_redis_work_key_count(self.redis)
+        if active or outbox or redis_work_keys:
             raise CohortError(
-                f"replay namespace is not quiescent: active={active}, outbox={outbox}, redis={self.redis.dbsize()}"
+                "replay namespace is not quiescent: "
+                f"active={active}, outbox={outbox}, redis_work_keys={redis_work_keys}"
             )
 
     def restore_fixture(self, item: dict[str, Any]) -> str:

@@ -150,6 +150,27 @@ def test_redis_contamination_checks_run_references_not_volatile_rq_metadata() ->
     assert redis_run_reference_count(redis, {"run_other"}) == 1
 
 
+@pytest.mark.parametrize(
+    ("keys", "expected"),
+    [
+        ([b"rq:worker:volatile", b"rq:workers", b"rq:queues"], 0),
+        ([b"rq:worker:volatile", b"rq:queue:runs"], 1),
+        ([b"rq:worker:volatile", b"rq:job:pending"], 1),
+        ([b"rq:worker:volatile", b"rq:finished:runs"], 1),
+    ],
+)
+def test_replay_quiescence_ignores_only_worker_heartbeats(
+    keys: list[bytes], expected: int
+) -> None:
+    from scripts.verify_m4 import replay_redis_work_key_count
+
+    class FakeRedis:
+        def scan_iter(self):
+            return iter(keys)
+
+    assert replay_redis_work_key_count(FakeRedis()) == expected
+
+
 def test_atomic_json_has_canonical_bytes_and_refuses_overwrite(tmp_path: Path) -> None:
     destination = tmp_path / "artifact.json"
     digest = atomic_write_json(destination, {"z": 1, "中文": 2})
