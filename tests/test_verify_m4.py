@@ -154,7 +154,7 @@ def test_redis_contamination_checks_run_references_not_volatile_rq_metadata() ->
 @pytest.mark.parametrize(
     ("keys", "expected"),
     [
-        ([b"rq:worker:volatile", b"rq:workers", b"rq:queues"], 0),
+        ([b"rq:worker:volatile", b"rq:workers", b"rq:workers:runs", b"rq:queues"], 0),
         ([b"rq:worker:volatile", b"rq:queue:runs"], 1),
         ([b"rq:worker:volatile", b"rq:job:pending"], 1),
         ([b"rq:worker:volatile", b"rq:finished:runs"], 1),

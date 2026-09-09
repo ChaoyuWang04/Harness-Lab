@@ -75,7 +75,9 @@ def replay_redis_work_key_count(client: Redis) -> int:
     return sum(
         1
         for key in client.scan_iter()
-        if key not in volatile_worker_keys and not key.startswith(b"rq:worker:")
+        if key not in volatile_worker_keys
+        and not key.startswith(b"rq:worker:")
+        and not key.startswith(b"rq:workers:")
     )
 
 
