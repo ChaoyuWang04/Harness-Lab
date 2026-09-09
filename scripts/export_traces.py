@@ -57,6 +57,7 @@ def extract_database_fixtures(
                                 "scenario_kind": case_record["scenario_kind"],
                                 "world_fixture_id": case_record["world_fixture_id"],
                                 "fault_schedule_id": case_record["fault_schedule_id"],
+                                "expected_behavior": case_record["expected_behavior"],
                             },
                             "run": {
                                 "id": run.id,

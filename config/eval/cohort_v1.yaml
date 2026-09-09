@@ -216,35 +216,35 @@ cases:
     world_fixture_id: campaigns-v1
     expected_terminal_class: terminal
     fault_schedule_id: env-01
-    expected_behavior: {assertions: [{operator: registered_faults, expected: ["429", "429", "200"]}, {operator: system_outcome, expected: recovered}]}
+    expected_behavior: {assertions: [{operator: registered_faults, expected: ["429", "429", "200"]}, {operator: system_outcome, expected: recovered}, {operator: answer_fact, expected: 七}]}
   - case_id: env-02
     prompt: 用一句话解释五加六等于多少。
     scenario_kind: environment
     world_fixture_id: campaigns-v1
     expected_terminal_class: terminal
     fault_schedule_id: env-02
-    expected_behavior: {assertions: [{operator: registered_faults, expected: ["timeout", "timeout", "200"]}, {operator: system_outcome, expected: recovered}]}
+    expected_behavior: {assertions: [{operator: registered_faults, expected: ["timeout", "timeout", "200"]}, {operator: system_outcome, expected: recovered}, {operator: answer_fact, expected: 十一}]}
   - case_id: env-03
     prompt: 用一句话解释七加八等于多少。
     scenario_kind: environment
     world_fixture_id: campaigns-v1
     expected_terminal_class: terminal
     fault_schedule_id: env-03
-    expected_behavior: {assertions: [{operator: registered_faults, expected: ["503", "503", "200"]}, {operator: system_outcome, expected: recovered}]}
+    expected_behavior: {assertions: [{operator: registered_faults, expected: ["503", "503", "200"]}, {operator: system_outcome, expected: recovered}, {operator: answer_fact, expected: 十五}]}
   - case_id: env-04
     prompt: 用一句话解释九加十等于多少。
     scenario_kind: environment
     world_fixture_id: campaigns-v1
     expected_terminal_class: terminal
     fault_schedule_id: env-04
-    expected_behavior: {assertions: [{operator: registered_faults, expected: ["429", "503", "200"]}, {operator: system_outcome, expected: recovered}]}
+    expected_behavior: {assertions: [{operator: registered_faults, expected: ["429", "503", "200"]}, {operator: system_outcome, expected: recovered}, {operator: answer_fact, expected: 十九}]}
   - case_id: env-05
     prompt: 用一句话解释十一加十二等于多少。
     scenario_kind: environment
     world_fixture_id: campaigns-v1
     expected_terminal_class: terminal
     fault_schedule_id: env-05
-    expected_behavior: {assertions: [{operator: registered_faults, expected: ["timeout", "503", "200"]}, {operator: system_outcome, expected: recovered}]}
+    expected_behavior: {assertions: [{operator: registered_faults, expected: ["timeout", "503", "200"]}, {operator: system_outcome, expected: recovered}, {operator: answer_fact, expected: 二十三}]}
   - case_id: env-06
     prompt: 用一句话解释十三加十四等于多少。
     scenario_kind: environment

@@ -21,6 +21,9 @@ def _fixture() -> dict[str, object]:
             "scenario_kind": "normal",
             "world_fixture_id": "campaigns-v1",
             "fault_schedule_id": "none",
+            "expected_behavior": {
+                "assertions": [{"operator": "answer_fact", "expected": "1000"}]
+            },
         },
         "run": {
             "id": "run-1",
@@ -91,6 +94,7 @@ def test_reconstructs_tool_lineage_and_model_order_deterministically() -> None:
     trajectory = reconstruct_trajectory(**fixture)
 
     assert trajectory["run_id"] == "run-1"
+    assert trajectory["expected_behavior"] == fixture["case"]["expected_behavior"]
     assert trajectory["model_turns"][0]["identity"] == [1, 1, 0]
     assert trajectory["model_turns"][0]["tool_calls"][0] == {
         "id": "call-1",

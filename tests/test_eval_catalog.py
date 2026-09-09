@@ -33,6 +33,22 @@ def test_catalog_freezes_exact_m4_cohort_and_fault_totals() -> None:
     }
     assert len({case.case_id for case in catalog.cases}) == 50
     assert all(case.expected_behavior.assertions for case in catalog.cases)
+    recovered_answer_facts = {
+        case.case_id: next(
+            assertion.expected
+            for assertion in case.expected_behavior.assertions
+            if assertion.operator == "answer_fact"
+        )
+        for case in catalog.cases
+        if case.case_id in {"env-01", "env-02", "env-03", "env-04", "env-05"}
+    }
+    assert recovered_answer_facts == {
+        "env-01": "七",
+        "env-02": "十一",
+        "env-03": "十五",
+        "env-04": "十九",
+        "env-05": "二十三",
+    }
 
 
 def test_catalog_sources_and_schedules_have_stable_hashes() -> None:

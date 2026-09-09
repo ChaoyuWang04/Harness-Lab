@@ -133,6 +133,7 @@ def reconstruct_trajectory(
         "scenario_kind": case["scenario_kind"],
         "world_fixture_id": case["world_fixture_id"],
         "fault_schedule_id": case["fault_schedule_id"],
+        "expected_behavior": deepcopy(case["expected_behavior"]),
         "prompt": run["input_json"]["prompt"],
         "status": run["status"],
         "result": run.get("result_json"),

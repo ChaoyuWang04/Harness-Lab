@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 
-CLASSIFIER_VERSION = "m4-classifier-v1"
+CLASSIFIER_VERSION = "m4-classifier-v2"
 ENVIRONMENT_ERRORS = frozenset({"MODEL_429", "MODEL_TIMEOUT", "MODEL_5XX"})
 REQUIRED_FIELDS = frozenset(
     {
@@ -15,6 +15,7 @@ REQUIRED_FIELDS = frozenset(
         "source_sha256",
         "world_fixture_id",
         "fault_schedule_id",
+        "expected_behavior",
         "status",
         "events",
         "model_turns",
@@ -60,6 +61,15 @@ def _has_refusal(trajectory: dict[str, Any]) -> bool:
     return any(marker in text for marker in ("不能", "拒绝", "无法", "限制", "not allowed", "cannot"))
 
 
+def _answer_facts_match(trajectory: dict[str, Any]) -> bool | None:
+    assertions = trajectory.get("expected_behavior", {}).get("assertions", [])
+    facts = [item.get("expected") for item in assertions if item.get("operator") == "answer_fact"]
+    if not facts:
+        return None
+    text = str(trajectory["model_turns"][-1].get("output_content") or "")
+    return all(str(fact) in text for fact in facts)
+
+
 def classify_trajectory(trajectory: dict[str, Any]) -> dict[str, Any]:
     missing = sorted(REQUIRED_FIELDS - trajectory.keys())
     if missing or not trajectory.get("model_turns"):
@@ -86,6 +96,14 @@ def classify_trajectory(trajectory: dict[str, Any]) -> dict[str, Any]:
     audits = trajectory.get("audits", [])
 
     if scenario == "environment":
+        if status == "completed" and _answer_facts_match(trajectory) is False:
+            return _result(
+                "recovered" if retries else "success",
+                "environment",
+                "bad_output",
+                "resilience_eval",
+                "ENVIRONMENT_RECOVERED_BAD_OUTPUT",
+            )
         if status == "completed" and retries:
             return _result(
                 "recovered",

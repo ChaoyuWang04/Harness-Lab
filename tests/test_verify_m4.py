@@ -77,6 +77,7 @@ def test_cohort_orders_fixture_schedule_submission_and_terminal_collection(tmp_p
     )
 
     assert len(manifest["cases"]) == 50
+    assert all(record["expected_behavior"] for record in manifest["cases"])
     for case in catalog.cases:
         names = [name for name, case_id in runtime.calls if case_id == case.case_id]
         expected = ["restore", "arm", "submit", "terminal", "collect", "disarm"]

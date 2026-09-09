@@ -94,6 +94,7 @@ def run_cohort(
                 "world_fixture_id": case.world_fixture_id,
                 "pre_state_sha256": observed_pre_state,
                 "fault_schedule_id": case.fault_schedule_id,
+                "expected_behavior": case.expected_behavior.model_dump(mode="json"),
                 "terminal": terminal,
                 "schedule_state": schedule_state,
                 "evidence": evidence,

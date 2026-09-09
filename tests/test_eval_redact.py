@@ -23,6 +23,9 @@ def _raw(run_id: str, campaign_id: str) -> dict[str, object]:
         "scenario_kind": "normal",
         "world_fixture_id": "campaigns-v1",
         "fault_schedule_id": "none",
+        "expected_behavior": {
+            "assertions": [{"operator": "answer_fact", "expected": "正常"}]
+        },
         "prompt": f"查询 {campaign_id}",
         "status": "completed",
         "result": {"answer": f"{campaign_id} 正常"},

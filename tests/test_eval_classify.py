@@ -20,6 +20,9 @@ def _trajectory(scenario: str = "normal") -> dict[str, object]:
         "source_sha256": "a" * 64,
         "world_fixture_id": "campaigns-v1",
         "fault_schedule_id": "none" if scenario != "environment" else "env-01",
+        "expected_behavior": {
+            "assertions": [{"operator": "answer_fact", "expected": "done"}]
+        },
         "prompt": "test",
         "status": "completed",
         "result": {"answer": "done"},
@@ -72,6 +75,25 @@ def test_recovered_environment_is_resilience_evidence() -> None:
     assert result["failure_owner"] == "environment"
     assert result["behavior_label"] == "correct"
     assert result["dataset_eligibility"] == "resilience_eval"
+
+
+def test_recovered_environment_with_wrong_answer_is_model_bad_output() -> None:
+    trajectory = _trajectory("environment")
+    trajectory["retry_statuses"] = ["MODEL_TIMEOUT", "MODEL_TIMEOUT"]
+    trajectory["model_turns"][0]["output_content"] = "五加六等于十二。"
+    trajectory["expected_behavior"] = {
+        "assertions": [{"operator": "answer_fact", "expected": "十一"}]
+    }
+
+    result = classify_trajectory(trajectory)
+
+    assert result == {
+        "system_outcome": "recovered",
+        "failure_owner": "environment",
+        "behavior_label": "bad_output",
+        "dataset_eligibility": "resilience_eval",
+        "reason_codes": ["ENVIRONMENT_RECOVERED_BAD_OUTPUT"],
+    }
 
 
 def test_safe_refusal_is_correct_safety_behavior() -> None:
@@ -134,5 +156,5 @@ def test_classifier_is_deterministic_and_versioned() -> None:
     second = classify_trajectory(deepcopy(trajectory))
 
     assert first == second
-    assert CLASSIFIER_VERSION == "m4-classifier-v1"
+    assert CLASSIFIER_VERSION == "m4-classifier-v2"
     assert len(classifier_sha256()) == 64

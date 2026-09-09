@@ -26,6 +26,7 @@ REQUIRED_RAW_FIELDS = frozenset(
         "scenario_kind",
         "world_fixture_id",
         "fault_schedule_id",
+        "expected_behavior",
         "status",
         "events",
         "model_turns",
