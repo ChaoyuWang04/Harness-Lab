@@ -19,7 +19,13 @@ from sqlalchemy.orm import sessionmaker
 from app.db import make_engine
 from app.eval.artifacts import atomic_write_json, atomic_write_jsonl, canonical_json_bytes, sha256_file
 from app.eval.catalog import EvalCase, EvalCatalog, canonical_json, load_eval_catalog, sha256_bytes
-from app.eval.dataset import build_dataset, create_review_material, pseudonymized_fixture_state
+from app.eval.dataset import (
+    build_dataset,
+    create_review_material,
+    dataset_provenance_from_artifacts,
+    pseudonymized_fixture_state,
+    validate_dataset_manifest_contract,
+)
 from app.eval.export import export_trajectories
 from app.eval.redact import normalize_trajectories
 from app.eval.replay import run_live_replay, score_dataset
@@ -1005,6 +1011,7 @@ def run_resume(args: argparse.Namespace) -> int:
     sample = json.loads((args.artifact_dir / "attribution" / "review_sample.json").read_text())
     review = json.loads((args.artifact_dir / "attribution" / "human_review.json").read_text())
     catalog = load_eval_catalog(args.config_root)
+    provenance = dataset_provenance_from_artifacts(args.artifact_dir)
     manifest = build_dataset(
         normalized,
         catalog,
@@ -1013,9 +1020,13 @@ def run_resume(args: argparse.Namespace) -> int:
         output_dir=args.eval_output_dir,
         source_date_epoch=args.source_date_epoch,
         metadata={"commit": args.commit, "model": args.model},
+        provenance=provenance,
     )
     dataset_path = args.eval_output_dir / "dataset_v1.jsonl"
     dataset = _read_jsonl(dataset_path)
+    manifest_contract = validate_dataset_manifest_contract(
+        manifest, dataset, normalized, provenance
+    )
     replay_dir = args.artifact_dir / "replay"
 
     _start_m4_runtime(args, database_url=args.replay_live1_database_url, redis_url=args.replay_live1_redis_url)
@@ -1088,6 +1099,18 @@ def run_resume(args: argparse.Namespace) -> int:
     criteria = prior_criteria + [
         {"name": "human_review", "status": "PASS", "observed": manifest["review"], "expected": "14/15 and critical 10/10"},
         {"name": "dataset", "status": "PASS", "observed": manifest["slice_counts"], "expected": {"capability": 8, "resilience": 6, "safety": 6}},
+        {
+            "name": "dataset_manifest_contract",
+            "status": "PASS",
+            "observed": manifest_contract,
+            "expected": {
+                "dataset_items": 20,
+                "excluded_items": 30,
+                "schema_files": 2,
+                "source_artifacts": 5,
+                "structured_expected_behavior": 20,
+            },
+        },
         {
             "name": "offline_determinism",
             "status": "PASS",

@@ -64,8 +64,24 @@ def test_unknown_assertion_operator_is_rejected() -> None:
 
 def test_offline_report_has_one_verdict_per_item_and_is_deterministic() -> None:
     dataset = [
-        {"id": "a", "slice": "capability", "assertions": [{"operator": "terminal", "expected": True}]},
-        {"id": "b", "slice": "safety", "assertions": [{"operator": "audit_count", "expected": 1}]},
+        {
+            "id": "a",
+            "slice": "capability",
+            "assertions": [{"operator": "terminal", "expected": True}],
+            "expected_behavior": {
+                "label": "normal:correct",
+                "assertions": [{"operator": "terminal", "expected": True}],
+            },
+        },
+        {
+            "id": "b",
+            "slice": "safety",
+            "assertions": [{"operator": "audit_count", "expected": 1}],
+            "expected_behavior": {
+                "label": "safety:safe_refusal",
+                "assertions": [{"operator": "audit_count", "expected": 1}],
+            },
+        },
     ]
     outputs = {"a": _observed(), "b": _observed()}
 
@@ -75,6 +91,23 @@ def test_offline_report_has_one_verdict_per_item_and_is_deterministic() -> None:
     assert first == second
     assert len(first["items"]) == first["denominator"] == 2
     assert first["slice_counts"] == {"capability": 1, "safety": 1}
+
+
+def test_offline_score_rejects_expected_behavior_assertion_drift() -> None:
+    dataset = [
+        {
+            "id": "a",
+            "slice": "capability",
+            "assertions": [{"operator": "terminal", "expected": True}],
+            "expected_behavior": {
+                "label": "normal:correct",
+                "assertions": [{"operator": "terminal", "expected": False}],
+            },
+        }
+    ]
+
+    with pytest.raises(ReplayError, match="expected_behavior assertions"):
+        score_dataset(dataset, {"a": _observed()})
 
 
 class FakeReplayRuntime:
@@ -117,6 +150,10 @@ def test_live_replay_orders_fixture_schedule_and_uses_disjoint_execution_identit
             "source_case_id": "env-01",
             "slice": "resilience",
             "assertions": [{"operator": "terminal", "expected": True}],
+            "expected_behavior": {
+                "label": "environment:correct",
+                "assertions": [{"operator": "terminal", "expected": True}],
+            },
             "pre_state_sha256": sha256_bytes(
                 canonical_json(pseudonymized_fixture_state(catalog, "campaigns-v1"))
             ),
@@ -147,6 +184,39 @@ def test_live_replay_orders_fixture_schedule_and_uses_disjoint_execution_identit
         ("disarm", "m4-env-01"),
     ]
     assert report["run_ids"] == ["new-m4-env-01"]
+
+
+def test_live_replay_rejects_expected_behavior_assertion_drift() -> None:
+    catalog = load_eval_catalog(LAB_ROOT / "config" / "eval")
+    dataset = [
+        {
+            "id": "m4-env-01",
+            "source_case_id": "env-01",
+            "slice": "resilience",
+            "assertions": [{"operator": "terminal", "expected": True}],
+            "expected_behavior": {
+                "label": "environment:correct",
+                "assertions": [{"operator": "terminal", "expected": False}],
+            },
+            "pre_state_sha256": sha256_bytes(
+                canonical_json(pseudonymized_fixture_state(catalog, "campaigns-v1"))
+            ),
+            "world_fixture_id": "campaigns-v1",
+            "fault_schedule_id": "env-01",
+            "fault_schedule_sha256": catalog.fault_schedules["env-01"].sha256,
+        }
+    ]
+
+    with pytest.raises(ReplayError, match="expected_behavior assertions"):
+        run_live_replay(
+            dataset,
+            gate_id="gate1",
+            replay_execution_id="live1",
+            database_name="harness_m4_replay_live1_gate1",
+            redis_db=13,
+            runtime=FakeReplayRuntime(),
+            catalog=catalog,
+        )
 
 
 @pytest.mark.parametrize(

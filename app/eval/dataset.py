@@ -12,14 +12,196 @@ from typing import Any
 
 from jsonschema import Draft202012Validator
 
-from app.eval.artifacts import atomic_write_json, atomic_write_jsonl, canonical_json_bytes
+from app.eval.artifacts import atomic_write_json, atomic_write_jsonl, canonical_json_bytes, sha256_file
 from app.eval.catalog import EvalCatalog, canonical_json, sha256_bytes
 from app.eval.classify import CLASSIFIER_VERSION, classifier_sha256
-from app.eval.redact import REDACTOR_VERSION
+from app.eval.redact import REDACTOR_VERSION, redactor_sha256
 
 
 class HumanReviewError(RuntimeError):
     pass
+
+
+PROVENANCE_SHA_FIELDS = (
+    "raw_trajectories_sha256",
+    "raw_export_manifest_sha256",
+    "normalized_trajectories_sha256",
+    "normalized_manifest_sha256",
+    "quarantine_manifest_sha256",
+)
+
+
+def dataset_provenance_from_artifacts(artifact_dir: Path) -> dict[str, Any]:
+    raw_path = artifact_dir / "raw" / "trajectories.jsonl"
+    raw_manifest_path = artifact_dir / "raw" / "export_manifest.json"
+    normalized_path = artifact_dir / "normalized" / "trajectories.jsonl"
+    normalized_manifest_path = artifact_dir / "normalized" / "manifest.json"
+    quarantine_path = artifact_dir / "quarantine" / "trajectories.jsonl"
+    quarantine_manifest_path = artifact_dir / "quarantine" / "exclusions.json"
+    raw = [json.loads(line) for line in raw_path.read_text(encoding="utf-8").splitlines()]
+    normalized = [
+        json.loads(line)
+        for line in normalized_path.read_text(encoding="utf-8").splitlines()
+    ]
+    raw_manifest = json.loads(raw_manifest_path.read_text(encoding="utf-8"))
+    normalized_manifest = json.loads(normalized_manifest_path.read_text(encoding="utf-8"))
+    quarantine = [
+        json.loads(line)
+        for line in quarantine_path.read_text(encoding="utf-8").splitlines()
+    ]
+    quarantine_manifest = json.loads(quarantine_manifest_path.read_text(encoding="utf-8"))
+    raw_sha = sha256_file(raw_path)
+    normalized_sha = sha256_file(normalized_path)
+    if raw_manifest.get("trajectories_sha256") != raw_sha:
+        raise ValueError("raw export manifest SHA mismatch")
+    if raw_manifest.get("count") != len(raw):
+        raise ValueError("raw export manifest count mismatch")
+    if normalized_manifest.get("sha256") != normalized_sha:
+        raise ValueError("normalized manifest SHA mismatch")
+    if normalized_manifest.get("raw_sha256") != raw_sha:
+        raise ValueError("normalized manifest raw SHA mismatch")
+    if normalized_manifest.get("count") != len(normalized):
+        raise ValueError("normalized manifest count mismatch")
+    if quarantine_manifest.get("count") != len(quarantine):
+        raise ValueError("quarantine manifest count mismatch")
+    prompt_versions = {
+        turn.get("prompt_version")
+        for item in raw
+        for turn in item.get("model_turns", [])
+    }
+    if len(prompt_versions) != 1 or not all(
+        isinstance(version, str) and version for version in prompt_versions
+    ):
+        raise ValueError("source trajectories require exactly one prompt_version")
+    return {
+        "prompt_version": next(iter(prompt_versions)),
+        "raw_trajectories_sha256": raw_sha,
+        "raw_export_manifest_sha256": sha256_file(raw_manifest_path),
+        "normalized_trajectories_sha256": normalized_sha,
+        "normalized_manifest_sha256": sha256_file(normalized_manifest_path),
+        "quarantine_manifest_sha256": sha256_file(quarantine_manifest_path),
+        "quarantine_count": len(quarantine),
+    }
+
+
+def validate_dataset_manifest_contract(
+    manifest: dict[str, Any],
+    rows: list[dict[str, Any]],
+    normalized: list[dict[str, Any]],
+    provenance: dict[str, Any],
+) -> dict[str, int]:
+    sha_pattern = re.compile(r"[0-9a-f]{64}")
+    prompt = manifest.get("prompt")
+    if not isinstance(prompt, dict) or not isinstance(prompt.get("version"), str) or not sha_pattern.fullmatch(
+        str(prompt.get("sha256", ""))
+    ):
+        raise ValueError("dataset manifest prompt provenance is incomplete")
+    schemas = manifest.get("schemas")
+    if not isinstance(schemas, dict) or set(schemas) != {"dataset", "trajectory"}:
+        raise ValueError("dataset manifest schema provenance is incomplete")
+    config_root = Path(__file__).resolve().parents[2] / "config" / "eval"
+    expected_schemas = {
+        "dataset": ("dataset_v1", config_root / "dataset_v1.schema.json"),
+        "trajectory": ("trajectory_v1", config_root / "trajectory_v1.schema.json"),
+    }
+    for name, (version, path) in expected_schemas.items():
+        if schemas[name] != {"version": version, "sha256": sha256_file(path)}:
+            raise ValueError(f"dataset manifest {name} schema identity mismatch")
+    if (
+        manifest.get("classifier_version") != CLASSIFIER_VERSION
+        or manifest.get("classifier_sha256") != classifier_sha256()
+    ):
+        raise ValueError("dataset manifest classifier identity mismatch")
+    if (
+        manifest.get("redactor_version") != REDACTOR_VERSION
+        or manifest.get("redactor_sha256") != redactor_sha256()
+    ):
+        raise ValueError("dataset manifest redactor identity mismatch")
+    system_prompts = {
+        message["content"]
+        for item in normalized
+        for message in item.get("messages", [])
+        if message.get("role") == "system" and isinstance(message.get("content"), str)
+    }
+    expected_prompt_sha = (
+        hashlib.sha256(next(iter(system_prompts)).encode("utf-8")).hexdigest()
+        if len(system_prompts) == 1
+        else None
+    )
+    if expected_prompt_sha is None or prompt["sha256"] != expected_prompt_sha:
+        raise ValueError("dataset manifest prompt identity mismatch")
+    if prompt["version"] != provenance.get("prompt_version"):
+        raise ValueError("dataset manifest prompt version identity mismatch")
+    source_artifacts = manifest.get("source_artifacts")
+    if not isinstance(source_artifacts, dict) or set(source_artifacts) != set(
+        PROVENANCE_SHA_FIELDS
+    ) or not all(sha_pattern.fullmatch(str(value)) for value in source_artifacts.values()):
+        raise ValueError("dataset manifest source artifact provenance is incomplete")
+    expected_source_artifacts = {
+        field: provenance.get(field) for field in PROVENANCE_SHA_FIELDS
+    }
+    if source_artifacts != expected_source_artifacts:
+        raise ValueError("dataset manifest source artifact identity mismatch")
+    counts = manifest.get("counts")
+    expected_selected = len(rows)
+    expected_eligible = sum(
+        item.get("attribution", {}).get("dataset_eligibility") != "quarantine"
+        for item in normalized
+    )
+    expected_quarantined = provenance.get("quarantine_count")
+    if not isinstance(counts, dict) or set(counts) != {
+        "normalized",
+        "eligible",
+        "selected",
+        "not_selected",
+        "quarantined",
+    }:
+        raise ValueError("dataset manifest counts are incomplete")
+    if (
+        counts["selected"] != expected_selected
+        or counts["normalized"] != len(normalized)
+        or counts["eligible"] != expected_eligible
+        or counts["quarantined"] != expected_quarantined
+        or counts["eligible"] - counts["selected"] != counts["not_selected"]
+        or counts["normalized"] + counts["quarantined"] != 50
+        or counts["normalized"] < counts["eligible"]
+    ):
+        raise ValueError("dataset manifest counts are inconsistent")
+    exclusions = manifest.get("exclusions")
+    expected_by_reason = {
+        "ineligible": counts["normalized"] - counts["eligible"],
+        "not_selected_fixed_slice_capacity": counts["not_selected"],
+        "quarantined": counts["quarantined"],
+    }
+    if not isinstance(exclusions, dict) or exclusions != {
+        "count": sum(expected_by_reason.values()),
+        "by_reason": expected_by_reason,
+    }:
+        raise ValueError("dataset manifest exclusions are incomplete or inconsistent")
+    structured = sum(
+        1
+        for row in rows
+        if isinstance(row.get("expected_behavior"), dict)
+        and row["expected_behavior"].get("assertions") == row.get("assertions")
+        and isinstance(row["expected_behavior"].get("label"), str)
+    )
+    if structured != expected_selected:
+        raise ValueError("dataset expected_behavior is not executable and structured")
+    dataset_sha = hashlib.sha256(b"".join(canonical_json_bytes(row) for row in rows)).hexdigest()
+    if manifest.get("dataset_sha256") != dataset_sha or manifest.get("count") != expected_selected:
+        raise ValueError("dataset manifest dataset identity mismatch")
+    if not isinstance(manifest.get("metadata"), dict) or not {
+        "commit",
+        "model",
+    } <= manifest["metadata"].keys():
+        raise ValueError("dataset manifest build metadata is incomplete")
+    return {
+        "dataset_items": expected_selected,
+        "excluded_items": exclusions["count"],
+        "schema_files": len(schemas),
+        "source_artifacts": len(source_artifacts),
+        "structured_expected_behavior": structured,
+    }
 
 
 def pseudonymized_fixture_state(catalog: EvalCatalog, fixture_id: str) -> dict[str, Any]:
@@ -150,7 +332,10 @@ def _dataset_item(
     return {
         "id": f"m4-{case.case_id}",
         "input": input_text,
-        "expected_behavior": f"{case.scenario_kind}:{item['attribution']['behavior_label']}",
+        "expected_behavior": {
+            "label": f"{case.scenario_kind}:{item['attribution']['behavior_label']}",
+            "assertions": deepcopy(assertions),
+        },
         "assertions": assertions,
         "slice": slice_name,
         "source_run_id": item["run_id"],
@@ -175,6 +360,7 @@ def build_dataset(
     output_dir: Path,
     source_date_epoch: int,
     metadata: dict[str, Any],
+    provenance: dict[str, Any],
 ) -> dict[str, Any]:
     review_result = validate_human_review(normalized, sample, review)
     if any(
@@ -218,6 +404,25 @@ def build_dataset(
     for row in rows:
         validator.validate(row)
 
+    if not isinstance(provenance.get("prompt_version"), str) or not provenance["prompt_version"]:
+        raise ValueError("dataset provenance requires prompt_version")
+    for field in PROVENANCE_SHA_FIELDS:
+        value = provenance.get(field)
+        if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value):
+            raise ValueError(f"dataset provenance requires SHA-256 field: {field}")
+    quarantine_count = provenance.get("quarantine_count")
+    if not isinstance(quarantine_count, int) or quarantine_count < 0:
+        raise ValueError("dataset provenance requires non-negative quarantine_count")
+    system_prompts = {
+        message["content"]
+        for item in normalized
+        for message in item["messages"]
+        if message.get("role") == "system" and isinstance(message.get("content"), str)
+    }
+    if len(system_prompts) != 1:
+        raise ValueError("dataset requires exactly one system prompt")
+    prompt_sha256 = hashlib.sha256(next(iter(system_prompts)).encode("utf-8")).hexdigest()
+
     output_dir.mkdir(parents=True, exist_ok=True)
     dataset_path = output_dir / "dataset_v1.jsonl"
     dataset_sha = atomic_write_jsonl(dataset_path, rows)
@@ -231,12 +436,46 @@ def build_dataset(
         "source_date_epoch": source_date_epoch,
         "generated_at": generated_at,
         "catalog_sha256": catalog.source_sha256,
+        "schemas": {
+            "dataset": {
+                "version": "dataset_v1",
+                "sha256": sha256_file(schema_path),
+            },
+            "trajectory": {
+                "version": "trajectory_v1",
+                "sha256": sha256_file(schema_path.with_name("trajectory_v1.schema.json")),
+            },
+        },
+        "prompt": {
+            "version": provenance["prompt_version"],
+            "sha256": prompt_sha256,
+        },
+        "source_artifacts": {
+            field: provenance[field] for field in PROVENANCE_SHA_FIELDS
+        },
+        "counts": {
+            "normalized": len(normalized),
+            "eligible": len(eligible),
+            "selected": len(rows),
+            "not_selected": len(eligible) - len(rows),
+            "quarantined": quarantine_count,
+        },
         "classifier_version": CLASSIFIER_VERSION,
         "classifier_sha256": classifier_sha256(),
         "redactor_version": REDACTOR_VERSION,
+        "redactor_sha256": redactor_sha256(),
+        "exclusions": {
+            "count": len(normalized) - len(rows) + quarantine_count,
+            "by_reason": {
+                "ineligible": len(normalized) - len(eligible),
+                "not_selected_fixed_slice_capacity": len(eligible) - len(rows),
+                "quarantined": quarantine_count,
+            },
+        },
         "review": review_result,
         "review_sample_sha256": sample["sample_sha256"],
         "metadata": metadata,
     }
+    validate_dataset_manifest_contract(manifest, rows, normalized, provenance)
     atomic_write_json(output_dir / "dataset_v1.manifest.json", manifest)
     return manifest

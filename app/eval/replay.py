@@ -108,9 +108,19 @@ def score_item(
     return {"id": item_id, "passed": all(result["passed"] for result in results), "assertions": results}
 
 
+def validate_dataset_assertion_contract(dataset: list[dict[str, Any]]) -> None:
+    if any(
+        not isinstance(item.get("expected_behavior"), dict)
+        or item["expected_behavior"].get("assertions") != item.get("assertions")
+        for item in dataset
+    ):
+        raise ReplayError("expected_behavior assertions differ from executable assertions")
+
+
 def score_dataset(
     dataset: list[dict[str, Any]], outputs: dict[str, dict[str, Any]]
 ) -> dict[str, Any]:
+    validate_dataset_assertion_contract(dataset)
     ids = [item["id"] for item in dataset]
     if len(ids) != len(set(ids)):
         raise ReplayError("duplicate dataset item ID")
@@ -158,6 +168,7 @@ def run_live_replay(
         raise ReplayError("live replay requires an isolated replay database")
     if redis_db == 0:
         raise ReplayError("live replay refuses Redis DB 0")
+    validate_dataset_assertion_contract(dataset)
     before = canonical_json_bytes(dataset)
     runtime.assert_quiescent()
     outputs: dict[str, dict[str, Any]] = {}

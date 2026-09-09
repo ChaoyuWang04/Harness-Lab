@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from copy import deepcopy
@@ -35,6 +36,10 @@ REQUIRED_RAW_FIELDS = frozenset(
         "source_sha256",
     }
 )
+
+
+def redactor_sha256() -> str:
+    return hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 
 
 def _campaign_map(trajectories: list[dict[str, Any]]) -> dict[str, str]:

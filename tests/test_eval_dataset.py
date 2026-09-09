@@ -19,6 +19,7 @@ from app.eval.dataset import (  # noqa: E402
     build_dataset,
     create_review_material,
     validate_human_review,
+    validate_dataset_manifest_contract,
     pseudonymized_fixture_state,
 )
 
@@ -43,7 +44,10 @@ def _item(case_id: str, scenario: str, eligibility: str, behavior: str, schedule
         "run_id": f"run-{case_id}",
         "case_id": case_id,
         "scenario_kind": scenario,
-        "messages": [{"role": "user", "content": f"prompt {case_id}"}],
+        "messages": [
+            {"role": "system", "content": "test-system-prompt"},
+            {"role": "user", "content": f"prompt {case_id}"},
+        ],
         "terminal": {"status": "completed", "error_code": None},
         "attribution": {
             "system_outcome": "recovered" if scenario == "environment" else "success",
@@ -66,6 +70,18 @@ def _approved_review(items: list[dict[str, object]], sample: dict[str, object]) 
         attribution = by_case[sampled["case_id"]]["attribution"]
         decisions.append({"case_id": sampled["case_id"], **attribution})
     return {"sample_sha256": sample["sample_sha256"], "decisions": decisions}
+
+
+def _provenance() -> dict[str, object]:
+    return {
+        "prompt_version": "v1",
+        "raw_trajectories_sha256": "1" * 64,
+        "raw_export_manifest_sha256": "2" * 64,
+        "normalized_trajectories_sha256": "3" * 64,
+        "normalized_manifest_sha256": "4" * 64,
+        "quarantine_manifest_sha256": "5" * 64,
+        "quarantine_count": 0,
+    }
 
 
 def test_review_is_stratified_blinded_and_sha_bound() -> None:
@@ -112,6 +128,7 @@ def test_dataset_meets_slices_lineage_and_is_byte_deterministic(tmp_path: Path) 
         output_dir=tmp_path / "first",
         source_date_epoch=1_700_000_000,
         metadata={"commit": "a" * 40, "model": "test-model"},
+        provenance=_provenance(),
     )
     second = build_dataset(
         deepcopy(items),
@@ -121,11 +138,37 @@ def test_dataset_meets_slices_lineage_and_is_byte_deterministic(tmp_path: Path) 
         output_dir=tmp_path / "second",
         source_date_epoch=1_700_000_000,
         metadata={"commit": "a" * 40, "model": "test-model"},
+        provenance=deepcopy(_provenance()),
     )
 
     assert first == second
     assert first["count"] >= 20
     assert first["slice_counts"] == {"capability": 8, "resilience": 6, "safety": 6}
+    assert first["schemas"].keys() == {"dataset", "trajectory"}
+    assert all(len(item["sha256"]) == 64 for item in first["schemas"].values())
+    assert first["prompt"] == {
+        "version": "v1",
+        "sha256": hashlib.sha256(b"test-system-prompt").hexdigest(),
+    }
+    assert first["source_artifacts"] == {
+        key: value for key, value in _provenance().items() if key.endswith("sha256")
+    }
+    assert first["counts"] == {
+        "normalized": 50,
+        "eligible": 50,
+        "selected": 20,
+        "not_selected": 30,
+        "quarantined": 0,
+    }
+    assert first["exclusions"] == {
+        "count": 30,
+        "by_reason": {
+            "ineligible": 0,
+            "not_selected_fixed_slice_capacity": 30,
+            "quarantined": 0,
+        },
+    }
+    assert len(first["redactor_sha256"]) == 64
     assert (tmp_path / "first" / "dataset_v1.jsonl").read_bytes() == (
         tmp_path / "second" / "dataset_v1.jsonl"
     ).read_bytes()
@@ -135,11 +178,53 @@ def test_dataset_meets_slices_lineage_and_is_byte_deterministic(tmp_path: Path) 
     rows = [json.loads(line) for line in (tmp_path / "first" / "dataset_v1.jsonl").read_text().splitlines()]
     assert len({row["id"] for row in rows}) == len(rows)
     assert all(row["assertions"] for row in rows)
+    assert all(isinstance(row["expected_behavior"], dict) for row in rows)
+    assert all(row["expected_behavior"]["assertions"] == row["assertions"] for row in rows)
     assert all(len(row["source_sha256"]) == 64 for row in rows)
     for row in rows:
         operators = {assertion["operator"] for assertion in row["assertions"]}
         assert "sse_sequence_continuous" in operators
         assert "expected_post_state" in operators
+    assert validate_dataset_manifest_contract(first, rows, items, _provenance()) == {
+        "dataset_items": 20,
+        "excluded_items": 30,
+        "schema_files": 2,
+        "source_artifacts": 5,
+        "structured_expected_behavior": 20,
+    }
+    incomplete = deepcopy(first)
+    incomplete.pop("prompt")
+    with pytest.raises(ValueError, match="manifest prompt"):
+        validate_dataset_manifest_contract(incomplete, rows, items, _provenance())
+
+    wrong_redactor = deepcopy(first)
+    wrong_redactor["redactor_sha256"] = "0" * 64
+    with pytest.raises(ValueError, match="redactor identity"):
+        validate_dataset_manifest_contract(wrong_redactor, rows, items, _provenance())
+
+    wrong_exclusions = deepcopy(first)
+    wrong_exclusions["exclusions"]["count"] += 1
+    with pytest.raises(ValueError, match="exclusions"):
+        validate_dataset_manifest_contract(wrong_exclusions, rows, items, _provenance())
+
+    wrong_source = deepcopy(first)
+    wrong_source["source_artifacts"]["raw_trajectories_sha256"] = "f" * 64
+    with pytest.raises(ValueError, match="source artifact identity"):
+        validate_dataset_manifest_contract(wrong_source, rows, items, _provenance())
+
+    wrong_counts = deepcopy(first)
+    wrong_counts["counts"]["eligible"] = 49
+    wrong_counts["counts"]["not_selected"] = 29
+    wrong_counts["exclusions"] = {
+        "count": 30,
+        "by_reason": {
+            "ineligible": 1,
+            "not_selected_fixed_slice_capacity": 29,
+            "quarantined": 0,
+        },
+    }
+    with pytest.raises(ValueError, match="counts"):
+        validate_dataset_manifest_contract(wrong_counts, rows, items, _provenance())
 
 
 def test_replay_fixture_uses_the_same_pseudonyms_as_redacted_inputs() -> None:
@@ -172,4 +257,5 @@ def test_environment_behavior_negative_is_not_eligible_for_dataset(tmp_path: Pat
             output_dir=tmp_path,
             source_date_epoch=1_700_000_000,
             metadata={},
+            provenance=_provenance(),
         )

@@ -11,7 +11,7 @@ import pytest
 LAB_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(LAB_ROOT))
 
-from app.eval.artifacts import atomic_write_json  # noqa: E402
+from app.eval.artifacts import atomic_write_json, atomic_write_jsonl  # noqa: E402
 from app.eval.catalog import load_eval_catalog  # noqa: E402
 from scripts.run_m4_cohort import CohortError, run_cohort  # noqa: E402
 
@@ -219,6 +219,45 @@ def test_m4_gate_aggregator_marks_pending_and_fail_as_not_passed(tmp_path: Path)
     assert pending["status"] == "PENDING_HUMAN"
     assert failed["all_passed"] is False
     assert failed["status"] == "FAIL"
+
+
+def test_dataset_provenance_uses_artifact_bytes_and_prompt_version(tmp_path: Path) -> None:
+    from scripts.verify_m4 import dataset_provenance_from_artifacts
+
+    raw_dir = tmp_path / "raw"
+    normalized_dir = tmp_path / "normalized"
+    quarantine_dir = tmp_path / "quarantine"
+    raw_sha = atomic_write_jsonl(
+        raw_dir / "trajectories.jsonl",
+        [{"model_turns": [{"prompt_version": "v1"}]}],
+    )
+    atomic_write_json(
+        raw_dir / "export_manifest.json",
+        {"count": 1, "trajectories_sha256": raw_sha},
+    )
+    normalized_sha = atomic_write_jsonl(normalized_dir / "trajectories.jsonl", [{"id": 1}])
+    atomic_write_json(
+        normalized_dir / "manifest.json",
+        {"count": 1, "raw_sha256": raw_sha, "sha256": normalized_sha},
+    )
+    atomic_write_jsonl(quarantine_dir / "trajectories.jsonl", [])
+    atomic_write_json(quarantine_dir / "exclusions.json", {"count": 0})
+
+    result = dataset_provenance_from_artifacts(tmp_path)
+
+    assert result["prompt_version"] == "v1"
+    assert result["raw_trajectories_sha256"] == raw_sha
+    assert result["normalized_trajectories_sha256"] == normalized_sha
+    assert result["quarantine_count"] == 0
+    assert all(len(value) == 64 for key, value in result.items() if key.endswith("sha256"))
+
+    atomic_write_json(
+        normalized_dir / "manifest.json",
+        {"count": 1, "raw_sha256": "0" * 64, "sha256": normalized_sha},
+        overwrite=True,
+    )
+    with pytest.raises(ValueError, match="normalized manifest raw SHA"):
+        dataset_provenance_from_artifacts(tmp_path)
 
 
 def test_resume_identity_checks_every_persisted_hash_and_run_id(tmp_path: Path) -> None:

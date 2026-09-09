@@ -12,7 +12,12 @@ LAB_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(LAB_ROOT))
 
 from app.eval.artifacts import canonical_json_bytes  # noqa: E402
-from app.eval.redact import REDACTOR_VERSION, normalize_trajectories, scan_secret_hits  # noqa: E402
+from app.eval.redact import (  # noqa: E402
+    REDACTOR_VERSION,
+    normalize_trajectories,
+    redactor_sha256,
+    scan_secret_hits,
+)
 
 
 def _raw(run_id: str, campaign_id: str) -> dict[str, object]:
@@ -125,3 +130,11 @@ def test_normalization_is_byte_deterministic() -> None:
     assert canonical_json_bytes(normalize_trajectories(raw)) == canonical_json_bytes(
         normalize_trajectories(deepcopy(raw))
     )
+
+
+def test_redactor_identity_is_bound_to_its_source_file() -> None:
+    expected = __import__("hashlib").sha256(
+        (LAB_ROOT / "app" / "eval" / "redact.py").read_bytes()
+    ).hexdigest()
+
+    assert redactor_sha256() == expected
